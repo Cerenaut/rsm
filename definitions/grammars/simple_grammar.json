@@ -1,0 +1,113 @@
+{
+  "experiment-options": {
+    "workflow": "workflows.grammar_workflow",
+    "dataset": "datasets.mnist_grammar_dataset",
+    "component": "components.sequence_memory_stack",
+    "batches": 50000,
+    "hparams_override": {
+      "num_layers": 1,
+      "batch_size": 300,
+
+      "memory_training_interval": [0, -1],
+      "memory_summarize_input": true,
+      "memory_summarize_encoding": true,
+      "memory_summarize_decoding": true,
+      "memory_summarize_weights": true,
+      "memory_summarize_freq": true,
+
+      "predictor_optimize": "accuracy",
+      "predictor_nonlinearity": ["leaky-relu", "leaky-relu"],
+      "sparsity": [25],
+      "cols": [200],
+      "cells_per_col": [4],
+
+      "freq_min": 0.01,
+      "inhibition_decay": [0.1],
+
+      "feedback_norm": [true],
+      "feedback_decay_rate": [0.0],
+      "feedback_keep_rate": [1.0],
+
+      "filters_field_width": [28],
+      "filters_field_height": [28],
+      "filters_field_stride": [28],
+
+      "lifetime_sparsity_cols": false,
+      "lifetime_sparsity_dends": false
+    }
+  },
+  "workflow-options": {
+    "summarize": true,
+    "example_type": "random",
+    "grammar_states": {
+      "S0": {
+        "symbol": "0",
+        "test": false,
+        "end": false
+      },
+      "S1": {
+        "symbol": "1",
+        "test": false,
+        "end": false
+      },
+      "S2": {
+        "symbol": "2",
+        "test": false,
+        "end": false
+      },
+      "S3": {
+        "symbol": "3",
+        "test": false,
+        "end": false
+      }
+    },
+    "grammar_transitions": {
+      "START": [
+        {
+          "state": "S0",
+          "next": "SS0_1"
+        },
+        {
+          "state": "S0",
+          "next": "SS1_1"
+        }
+      ],
+      "SS0_1": [
+        {
+          "state": "S1",
+          "next": "SS0_2"
+        }
+      ],
+      "SS1_1": [
+        {
+          "state": "S3",
+          "next": "SS1_2"
+        }
+      ],
+      "SS0_2": [
+        {
+          "state": "S2",
+          "next": "SS0_3"
+        }
+      ],
+      "SS1_2": [
+        {
+          "state": "S2",
+          "next": "SS1_3"
+        }
+      ],
+      "SS0_3": [
+        {
+          "state": "S3",
+          "next": -1
+        }
+      ],
+      "SS1_3": [
+        {
+          "state": "S1",
+          "next": -1
+        }
+      ]
+    }
+  }
+}

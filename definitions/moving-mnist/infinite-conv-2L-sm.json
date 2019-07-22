@@ -1,0 +1,64 @@
+{
+  "experiment-options": {
+    "workflow": "workflows.moving_mnist_workflow",
+    "dataset": "datasets.mnist_moving_infinite_dataset",
+    "component": "components.sequence_memory_stack",
+    "batches": 2000,
+    "seed": 42,
+
+    "hparams_override": {
+      "num_layers": 2,
+      "connectivity":"bi",
+      "prediction_layer":0,
+
+      "batch_size": 200,
+
+      "loss_type": "mse",
+
+      "memory_training_interval": [0, -1],
+      "memory_summarize_input": false,
+      "memory_summarize_encoding": false,
+      "memory_summarize_decoding": true,
+      "memory_summarize_weights": false,
+      "memory_summarize_freq": false,
+
+      "layer_mass": 0.0,
+
+      "predictor_optimize": "reconstruction",
+      "predictor_nonlinearity": ["leaky-relu", "leaky-relu"],
+last one monotonically improving
+      "sparsity": [6,6],
+      "cols": [32,64],
+      "cells_per_col": [8,8],
+      "pool_size":[2,1],
+
+      "freq_min": 0.01,
+      "freq_update_interval": -1,
+      "freq_learning_rate": 0.1,
+
+      "inhibition_decay": [0.8,0.8],
+      "feedback_decay_rate": [0.8,0.8],
+      "feedback_keep_rate": [1.0,1.0],
+      "feedback_norm": [true,true],
+
+      "filters_field_width": [7,3],
+      "filters_field_height": [7,3],
+      "filters_field_stride": [3,1],
+
+      "lifetime_sparsity_cols": false,
+      "lifetime_sparsity_dends": false
+    }
+  },
+  "workflow-options": {
+    "train": true,
+    "evaluate": true,
+    "summarize": true,
+
+    "prime": true,
+    "prime_num_frames": 10,
+    "num_testing_batches": 200,
+
+    "frame_padding_size": 1,
+    "frame_padding_value": -1
+  }
+}

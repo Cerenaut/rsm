@@ -1,0 +1,515 @@
+{
+  "experiment-options": {
+    "workflow": "workflows.grammar_workflow",
+    "dataset": "datasets.mnist_grammar_dataset",
+    "component": "components.sequence_memory_stack",
+    "batches": 1000000,
+    "hparams_override": {
+      "num_layers": 1,
+      "batch_size": 300,
+
+      "memory_training_interval": [0, -1],
+      "memory_summarize_input": true,
+      "memory_summarize_encoding": true,
+      "memory_summarize_decoding": true,
+      "memory_summarize_weights": true,
+      "memory_summarize_freq": true,
+
+      "predictor_optimize": "accuracy",
+      "predictor_nonlinearity": ["leaky-relu", "leaky-relu"],
+      "sparsity": [25],
+      "cols": [200],
+      "cells_per_col": [4],
+
+      "freq_min": 0.01,
+      "inhibition_decay": [0.1],
+
+      "feedback_norm": [true],
+      "feedback_decay_rate": [0.0],
+      "feedback_keep_rate": [1.0],
+
+      "filters_field_width": [28],
+      "filters_field_height": [28],
+      "filters_field_stride": [28],
+
+      "lifetime_sparsity_cols": false,
+      "lifetime_sparsity_dends": false
+    }
+  },
+  "workflow-options": {
+    "summarize": true,
+    "example_type": "random",
+    "grammar_states": {
+      "S0": {
+        "symbol": "0",
+        "test": false,
+        "end": false
+      },
+      "S1": {
+        "symbol": "1",
+        "test": false,
+        "end": false
+      },
+      "S2": {
+        "symbol": "2",
+        "test": false,
+        "end": false
+      },
+      "S3": {
+        "symbol": "3",
+        "test": false,
+        "end": false
+      },
+      "S4": {
+        "symbol": "4",
+        "test": false,
+        "end": false
+      },
+      "S5": {
+        "symbol": "5",
+        "test": false,
+        "end": false
+      },
+      "S6": {
+        "symbol": "6",
+        "test": false,
+        "end": false
+      },
+      "S7": {
+        "symbol": "7",
+        "test": false,
+        "end": false
+      },
+      "S8": {
+        "symbol": "8",
+        "test": false,
+        "end": false
+      },
+      "S9": {
+        "symbol": "9",
+        "test": false,
+        "end": false
+      }
+    },
+    "grammar_transitions": {
+      "START": [
+        {
+          "state": "S2",
+          "next": "SS0_1"
+        },
+        {
+          "state": "S2",
+          "next": "SS1_1"
+        },
+        {
+          "state": "S5",
+          "next": "SS2_1"
+        },
+        {
+          "state": "S1",
+          "next": "SS3_1"
+        },
+        {
+          "state": "S2",
+          "next": "SS4_1"
+        },
+        {
+          "state": "S1",
+          "next": "SS5_1"
+        },
+        {
+          "state": "S3",
+          "next": "SS6_1"
+        },
+        {
+          "state": "S4",
+          "next": "SS7_1"
+        }
+      ],
+      "SS0_1": [
+        {
+          "state": "S4",
+          "next": "SS0_2"
+        }
+      ],
+      "SS1_1": [
+        {
+          "state": "S7",
+          "next": "SS1_2"
+        }
+      ],
+      "SS2_1": [
+        {
+          "state": "S7",
+          "next": "SS2_2"
+        }
+      ],
+      "SS3_1": [
+        {
+          "state": "S3",
+          "next": "SS3_2"
+        }
+      ],
+      "SS4_1": [
+        {
+          "state": "S9",
+          "next": "SS4_2"
+        }
+      ],
+      "SS5_1": [
+        {
+          "state": "S2",
+          "next": "SS5_2"
+        }
+      ],
+      "SS6_1": [
+        {
+          "state": "S8",
+          "next": "SS6_2"
+        }
+      ],
+      "SS7_1": [
+        {
+          "state": "S7",
+          "next": "SS7_2"
+        }
+      ],
+      "SS0_2": [
+        {
+          "state": "S0",
+          "next": "SS0_3"
+        }
+      ],
+      "SS1_2": [
+        {
+          "state": "S4",
+          "next": "SS1_3"
+        }
+      ],
+      "SS2_2": [
+        {
+          "state": "S3",
+          "next": "SS2_3"
+        }
+      ],
+      "SS3_2": [
+        {
+          "state": "S7",
+          "next": "SS3_3"
+        }
+      ],
+      "SS4_2": [
+        {
+          "state": "S1",
+          "next": "SS4_3"
+        }
+      ],
+      "SS5_2": [
+        {
+          "state": "S6",
+          "next": "SS5_3"
+        }
+      ],
+      "SS6_2": [
+        {
+          "state": "S0",
+          "next": "SS6_3"
+        }
+      ],
+      "SS7_2": [
+        {
+          "state": "S5",
+          "next": "SS7_3"
+        }
+      ],
+      "SS0_3": [
+        {
+          "state": "S7",
+          "next": "SS0_4"
+        }
+      ],
+      "SS1_3": [
+        {
+          "state": "S9",
+          "next": "SS1_4"
+        }
+      ],
+      "SS2_3": [
+        {
+          "state": "S4",
+          "next": "SS2_4"
+        }
+      ],
+      "SS3_3": [
+        {
+          "state": "S5",
+          "next": "SS3_4"
+        }
+      ],
+      "SS4_3": [
+        {
+          "state": "S9",
+          "next": "SS4_4"
+        }
+      ],
+      "SS5_3": [
+        {
+          "state": "S4",
+          "next": "SS5_4"
+        }
+      ],
+      "SS6_3": [
+        {
+          "state": "S5",
+          "next": "SS6_4"
+        }
+      ],
+      "SS7_3": [
+        {
+          "state": "S3",
+          "next": "SS7_4"
+        }
+      ],
+      "SS0_4": [
+        {
+          "state": "S8",
+          "next": "SS0_5"
+        }
+      ],
+      "SS1_4": [
+        {
+          "state": "S5",
+          "next": "SS1_5"
+        }
+      ],
+      "SS2_4": [
+        {
+          "state": "S1",
+          "next": "SS2_5"
+        }
+      ],
+      "SS3_4": [
+        {
+          "state": "S2",
+          "next": "SS3_5"
+        }
+      ],
+      "SS4_4": [
+        {
+          "state": "S2",
+          "next": "SS4_5"
+        }
+      ],
+      "SS5_4": [
+        {
+          "state": "S8",
+          "next": "SS5_5"
+        }
+      ],
+      "SS6_4": [
+        {
+          "state": "S6",
+          "next": "SS6_5"
+        }
+      ],
+      "SS7_4": [
+        {
+          "state": "S7",
+          "next": "SS7_5"
+        }
+      ],
+      "SS0_5": [
+        {
+          "state": "S1",
+          "next": "SS0_6"
+        }
+      ],
+      "SS1_5": [
+        {
+          "state": "S9",
+          "next": "SS1_6"
+        }
+      ],
+      "SS2_5": [
+        {
+          "state": "S3",
+          "next": "SS2_6"
+        }
+      ],
+      "SS3_5": [
+        {
+          "state": "S5",
+          "next": "SS3_6"
+        }
+      ],
+      "SS4_5": [
+        {
+          "state": "S8",
+          "next": "SS4_6"
+        }
+      ],
+      "SS5_5": [
+        {
+          "state": "S3",
+          "next": "SS5_6"
+        }
+      ],
+      "SS6_5": [
+        {
+          "state": "S4",
+          "next": "SS6_6"
+        }
+      ],
+      "SS7_5": [
+        {
+          "state": "S6",
+          "next": "SS7_6"
+        }
+      ],
+      "SS0_6": [
+        {
+          "state": "S6",
+          "next": "SS0_7"
+        }
+      ],
+      "SS1_6": [
+        {
+          "state": "S3",
+          "next": "SS1_7"
+        }
+      ],
+      "SS2_6": [
+        {
+          "state": "S1",
+          "next": "SS2_7"
+        }
+      ],
+      "SS3_6": [
+        {
+          "state": "S5",
+          "next": "SS3_7"
+        }
+      ],
+      "SS4_6": [
+        {
+          "state": "S3",
+          "next": "SS4_7"
+        }
+      ],
+      "SS5_6": [
+        {
+          "state": "S5",
+          "next": "SS5_7"
+        }
+      ],
+      "SS6_6": [
+        {
+          "state": "S1",
+          "next": "SS6_7"
+        }
+      ],
+      "SS7_6": [
+        {
+          "state": "S7",
+          "next": "SS7_7"
+        }
+      ],
+      "SS0_7": [
+        {
+          "state": "S1",
+          "next": "SS0_8"
+        }
+      ],
+      "SS1_7": [
+        {
+          "state": "S1",
+          "next": "SS1_8"
+        }
+      ],
+      "SS2_7": [
+        {
+          "state": "S6",
+          "next": "SS2_8"
+        }
+      ],
+      "SS3_7": [
+        {
+          "state": "S3",
+          "next": "SS3_8"
+        }
+      ],
+      "SS4_7": [
+        {
+          "state": "S2",
+          "next": "SS4_8"
+        }
+      ],
+      "SS5_7": [
+        {
+          "state": "S0",
+          "next": "SS5_8"
+        }
+      ],
+      "SS6_7": [
+        {
+          "state": "S3",
+          "next": "SS6_8"
+        }
+      ],
+      "SS7_7": [
+        {
+          "state": "S2",
+          "next": "SS7_8"
+        }
+      ],
+      "SS0_8": [
+        {
+          "state": "S8",
+          "next": -1
+        }
+      ],
+      "SS1_8": [
+        {
+          "state": "S0",
+          "next": -1
+        }
+      ],
+      "SS2_8": [
+        {
+          "state": "S4",
+          "next": -1
+        }
+      ],
+      "SS3_8": [
+        {
+          "state": "S4",
+          "next": -1
+        }
+      ],
+      "SS4_8": [
+        {
+          "state": "S7",
+          "next": -1
+        }
+      ],
+      "SS5_8": [
+        {
+          "state": "S3",
+          "next": -1
+        }
+      ],
+      "SS6_8": [
+        {
+          "state": "S9",
+          "next": -1
+        }
+      ],
+      "SS7_8": [
+        {
+          "state": "S4",
+          "next": -1
+        }
+      ]
+    }
+  }
+}

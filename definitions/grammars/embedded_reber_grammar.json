@@ -1,0 +1,107 @@
+{
+  "experiment-options": {
+    "workflow": "workflows.grammar_workflow",
+    "dataset": "datasets.mnist_grammar_dataset",
+    "component": "components.sequence_memory_stack",
+    "batches": 40000,
+    "seed":1234,
+    "hparams_override": {
+      "num_layers":1,
+      "batch_size": 400,
+      "predictor_optimize": "accuracy",
+      "memory_training_interval":[0,-1],
+      "predictor_hidden_size":[500],
+      "predictor_nonlinearity":["none","none"],
+
+      "lifetime_sparsity_cols": false,
+      "lifetime_sparsity_dends": false,
+
+      "sparsity": [25],
+
+      "cols": [200],
+      "cells_per_col": [8],
+      "dends_per_cell": [1],
+      "freq_min": 0.01,
+      "freq_update_interval":40,
+      "inhibition_decay":[0.98],
+
+      "filters_field_width": 28,
+      "filters_field_height": 28,
+      "filters_field_stride": 28
+    }
+  },
+  "workflow-options": {
+    "summarize":true,
+    "grammar_fixed_set": false,
+    "grammar_fixed_train_size": 20,
+    "grammar_fixed_test_size": 1,
+    "grammar_states": {
+      "S0": {"symbol": "B", "test": false, "end":false},
+      "S1": {"symbol": "T", "test": false, "end":false},
+      "S2": {"symbol": "P", "test": false, "end":false},
+
+      "ST0": {"symbol": "B", "test": false, "end":false},
+      "ST1": {"symbol": "T", "test": false, "end":false},
+      "ST2": {"symbol": "P", "test": false, "end":false},
+      "ST3": {"symbol": "X", "test": false, "end":false},
+      "ST4": {"symbol": "S", "test": false, "end":false},
+      "ST5": {"symbol": "V", "test": false, "end":false},
+      "ST6": {"symbol": "T", "test": false, "end":false},
+      "ST7": {"symbol": "X", "test": false, "end":false},
+      "ST8": {"symbol": "S", "test": false, "end":false},
+      "ST9": {"symbol": "P", "test": false, "end":false},
+      "ST10": {"symbol": "V", "test": false, "end":false},
+      "ST11": {"symbol": "E", "test": false, "end":false},
+
+      "SP0": {"symbol": "B", "test": false, "end":false},
+      "SP1": {"symbol": "T", "test": false, "end":false},
+      "SP2": {"symbol": "P", "test": false, "end":false},
+      "SP3": {"symbol": "X", "test": false, "end":false},
+      "SP4": {"symbol": "S", "test": false, "end":false},
+      "SP5": {"symbol": "V", "test": false, "end":false},
+      "SP6": {"symbol": "T", "test": false, "end":false},
+      "SP7": {"symbol": "X", "test": false, "end":false},
+      "SP8": {"symbol": "S", "test": false, "end":false},
+      "SP9": {"symbol": "P", "test": false, "end":false},
+      "SP10": {"symbol": "V", "test": false, "end":false},
+      "SP11": {"symbol": "E", "test": false, "end":false},
+
+      "S3": {"symbol": "T", "test": true, "end":false},
+      "S4": {"symbol": "P", "test": true, "end":false},
+      "S5": {"symbol": "E", "test": false, "end":true}
+    },
+    "grammar_transitions": {
+      "START": [{"state": "S0", "next": "IN"}],
+      "IN": [{"state": "S1", "next": "T0"}, {"state": "S2", "next": "P0"}],
+
+      "T0": [{"state": "ST0", "next": "T1"}],
+      "T1": [{"state":"ST1", "next": "T2"}, {"state": "ST2", "next": "T3"}],
+      "T2": [{"state": "ST3", "next": "T4"}, {"state": "ST4", "next": "T2"}],
+      "T3": [{"state": "ST5", "next": "T5"}, {"state": "ST6", "next": "T3"}],
+      "T4": [{"state": "ST7", "next": "T3"}, {"state": "ST8", "next": "T6"}],
+      "T5": [{"state": "ST9", "next": "T4"}, {"state": "ST10", "next": "T6"}],
+      "T6": [{"state": "ST11", "next": "OUT_1"}],
+
+      "P0": [{"state": "SP0", "next": "P1"}],
+      "P1": [{"state": "SP1", "next": "P2"}, {"state": "SP2", "next": "P3"}],
+      "P2": [{"state": "SP3", "next": "P4"}, {"state": "SP4", "next": "P2"}],
+      "P3": [{"state": "SP5", "next": "P5"}, {"state": "SP6", "next": "P3"}],
+      "P4": [{"state": "SP7", "next": "P3"}, {"state": "SP8", "next": "P6"}],
+      "P5": [{"state": "SP9", "next": "P4"}, {"state": "SP10", "next": "P6"}],
+      "P6": [{"state": "SP11", "next": "OUT_2"}],
+
+      "OUT_1": [{"state": "S3", "next": "END"}],
+      "OUT_2": [{"state": "S4", "next": "END"}],
+      "END": [{"state": "S5", "next": -1}]
+    },
+    "example_type": "same"
+  },
+  "parameter-sweeps": {
+    "hparams": [],
+    "workflow-options": [
+      {
+        "grammar_fixed_train_size": 20
+      }
+    ]
+  }
+}

@@ -1,0 +1,57 @@
+{
+  "experiment-options": {
+    "workflow": "workflows.video_workflow",
+    "dataset": "datasets.ravdess_dataset",
+    "component": "components.sequence_memory_stack",
+    "batches": 100000,
+
+    "hparams_override": {
+      "num_layers": 1,
+      "batch_size": 50,
+
+      "loss_type": "mse",
+
+      "memory_training_interval": [0, -1],
+      "memory_summarize_input": true,
+      "memory_summarize_encoding": true,
+      "memory_summarize_weights": false,
+      "memory_summarize_freq": false,
+
+      "layer_mass": 0.0,
+
+      "predictor_optimize": "reconstruction",
+      "predictor_nonlinearity": ["leaky-relu", "leaky-relu"],
+
+      "autoencode": true,
+
+      "sparsity": [20],
+      "cols": [600],
+      "cells_per_col": [1],
+      "dends_per_cell": [1],
+      "freq_min": 0.01,
+      "freq_update_interval": 40,
+      "freq_learning_rate": 0.1,
+
+      "inhibition_decay": [0.0],
+      "feedback_decay_rate": [0.0],
+      "feedback_keep_rate": [0.5],
+      "feedback_norm": [true],
+
+      "filters_field_width": 87,
+      "filters_field_height": 87,
+      "filters_field_stride": 87,
+
+      "lifetime_sparsity_cols": false,
+      "lifetime_sparsity_dends": false
+    }
+  },
+  "workflow-options": {
+    "train": true,
+    "evaluate": false,
+    "summarize": true,
+
+    "prime": true,
+    "prime_num_frames": 10,
+    "num_testing_batches": 20
+  }
+}

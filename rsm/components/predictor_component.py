@@ -1,0 +1,523 @@
+# Copyright (C) 2018 Project AGI
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+# ==============================================================================
+
+"""SequenceMemoryLayer class."""
+
+from __future__ import absolute_import
+from __future__ import division
+from __future__ import print_function
+
+import sys
+import logging
+import math
+
+import os
+from os.path import dirname, abspath
+
+import numpy as np
+import tensorflow as tf
+
+from pagi.utils import image_utils
+from pagi.utils.dual import DualData
+from pagi.utils.layer_utils import type_activation_fn
+from pagi.utils.tf_utils import tf_build_stats_summaries
+from pagi.utils.tf_utils import tf_build_top_k_mask_4d_op
+from pagi.utils.tf_utils import tf_build_varying_top_k_mask_4d_op
+from pagi.utils.tf_utils import tf_build_perplexity
+from pagi.utils.tf_utils import tf_build_cross_entropy
+from pagi.utils.tf_utils import tf_create_optimizer
+from pagi.utils.tf_utils import tf_build_interpolate_distributions
+from pagi.utils.tf_utils import tf_do_training
+from pagi.utils.np_utils import np_uniform
+from pagi.utils.np_utils import np_interpolate_distributions
+
+from pagi.components.summary_component import SummaryComponent
+from pagi.components.sparse_conv_autoencoder_component import SparseConvAutoencoderComponent
+
+
+class PredictorComponent(SummaryComponent):
+  """
+  A stack of fully-connected dense layers for a supervised function approximation purpose, 
+  such as classification.
+  """
+
+  # Static names
+  training = 'training'
+  encoding = 'encoding'
+
+  loss = 'loss'
+  keep = 'keep'
+  accuracy = 'accuracy'
+
+  prediction = 'prediction'
+  prediction_loss = 'prediction-loss'
+  prediction_loss_sum = 'prediction-loss-sum'
+  prediction_reshape = 'prediction-reshape'
+  prediction_softmax = 'prediction-softmax'
+  prediction_correct = 'prediction-correct'
+  prediction_correct_sum = 'prediction-correct-sum'
+  prediction_max = 'prediction-max'
+  prediction_perplexity = 'prediction-perplexity'
+
+  @staticmethod
+  def default_hparams():
+    """Builds an HParam object with default hyperparameters."""
+    return tf.contrib.training.HParams(
+
+        # Optimizer options
+        training_interval=[0,-1],
+        loss_type='cross-entropy',  # or mse
+        optimize='accuracy',  # target, accuracy
+        optimizer='adam',
+        learning_rate=0.0005,
+        momentum=0.9,  # Ignore if adam
+        momentum_nesterov=False,
+
+        # cache_decay=0.9,
+        # cache_mass=0.0,
+        #uniform_mass=0.0,
+        nonlinearity=['leaky-relu'],
+
+        # Geometry
+        batch_size=80,
+        hidden_size=[200],
+
+        # Regularization
+        keep_rate=1.0,
+        #keep_rate_input=1.0,  # disused
+        l2_regularizer=0.0,
+        label_smoothing=0.0,  # adds a uniform weight to the training target distribution
+
+        # Summary options
+        summarize=True,
+        summarize_input=False,
+        summarize_distribution=False
+    )
+
+  def __init__(self):
+    super().__init__()
+
+  # def get_prediction_softmax_op(self):
+  #   return self._dual.get_op('prediction-softmax')
+
+  # def get_prediction_softmax(self):
+  #   return self._dual.get_values('prediction-softmax')
+
+  # def get_prediction_op(self):
+  #   return self._dual.get_op('prediction')
+
+  # def get_prediction(self):
+  #   return self._dual.get_values('prediction')
+
+  # def get_correct_predictions(self):
+  #   return self._dual.get_values('correct_predictions')
+
+  # def get_predicted_logits(self):
+  #   return self._dual.get_values('prediction')
+
+  # def get_predicted_labels(self):
+  #   return self._dual.get_values('prediction_max')
+
+  # def get_perplexity(self):
+  #   return self._dual.get_values('perplexity')
+
+  # def get_perplexity_smoothed(self):
+  #   return self._dual.get_values('perplexity-smoothed')
+
+  def get_loss(self):
+    return self._loss
+
+  def reset(self):
+    """Reset the trained/learned variables and all other state of the component to a new random state."""
+    self._loss = 0.0
+
+    # TODO this should reinitialize all the variables..
+
+  def build(self, input_values, input_shape, label_values, label_shape, target_values, target_shape, hparams, name='predictor'):  # pylint: disable=W0221
+    """Initializes the model parameters.
+
+    Args:
+        input_values: Tensor containing input
+        input_shape: The shape of the input, for display (internal is vectorized)
+        label_values: Tensor containing label
+        label_shape: The shape of the label, for display (internal is vectorized)
+        hparams: The hyperparameters for the model as tf.contrib.training.HParams.
+        name: A globally unique graph name used as a prefix for all tensors and ops.
+        encoding_shape: The shape to be used to display encoded (hidden layer) structures
+    """
+
+    self.name = name
+    self._hparams = hparams
+    self._training_batch_count = 0
+
+    self._input_shape = input_shape
+    self._input_values = input_values
+
+    self._label_shape = label_shape
+    self._label_values = label_values
+
+    self._target_shape = target_shape
+    self._target_values = target_values
+
+    with tf.variable_scope(self.name, reuse=tf.AUTO_REUSE):
+      self._build()
+      self._build_optimizer()
+
+    self.reset()
+
+  def _build(self):
+    """Build the autoencoder network"""
+
+    # Flatten inputs
+    #input_shape_list = self._input_values.get_shape().as_list()
+    input_volume = np.prod(self._input_shape[1:])
+    input_shape_1d = [self._hparams.batch_size, input_volume]
+    input_values_1d = tf.reshape(self._input_values, input_shape_1d)
+
+    target_shape_list = self._target_values.get_shape().as_list()
+    target_volume = np.prod(target_shape_list[1:])
+
+    # Calculate output layer size
+    num_classes = self._label_shape[-1]
+    output_layer_size = 0
+    if self._hparams.optimize == self.accuracy:
+      output_layer_size = num_classes  # Number of classes
+    else:
+      output_layer_size = target_volume  # Number of pixels
+
+
+    # Define all layer sizes
+    hidden_layer_sizes = self._hparams.hidden_size  # An array
+    layer_sizes = hidden_layer_sizes.copy()
+    layer_sizes.append(output_layer_size)
+    self.layer_sizes = layer_sizes
+    self.num_layers = len(layer_sizes)
+    self.layers = []
+
+    for i, layer_size in enumerate(layer_sizes):
+      activation = type_activation_fn(self._hparams.nonlinearity[i])
+
+      # Empirically, it helps to have that final nonlinearity. Unexpected.
+      # # Disable output layer nonlinearity?
+      # if i == (self.num_layers -1):  # We don't want a nonlinearity before softmax
+      #   activation = None
+
+      layer = tf.layers.Dense(layer_size, activation=activation, use_bias=True, name='prediction_layer_' + str(i + 1))
+      logging.info('Predictor layer: %d has size: %d and fn: %s ', i, layer_size, str(activation))
+      self.layers.append(layer)
+
+    # Optional dropout of input bits at each layer
+    keep_pl = tf.placeholder_with_default(1.0, shape=())
+    self._dual.add(self.keep).set_pl(keep_pl)
+
+    # Connect layers
+    layer_input = input_values_1d
+
+    for i in range(self.num_layers):
+
+      layer = self.layers[i]
+      if self._hparams.keep_rate < 1.0:
+        layer_input = tf.nn.dropout(layer_input, keep_pl)  # Note, a scaling is applied
+
+      layer_output = layer(layer_input)
+      layer_input = layer_output
+      
+    prediction = layer_input  # output of last layer (1d)
+    prediction_sg = tf.stop_gradient(prediction)
+    self._dual.set_op(self.prediction, prediction_sg)
+
+    softmax = tf.nn.softmax(logits=prediction_sg)
+    self._dual.set_op(self.prediction_softmax, softmax)
+
+    prediction_loss = None  # Mean
+    prediction_loss_sum = None
+
+    if self._hparams.optimize == self.accuracy:
+      # We should predict the current labels l_t without using the current input x_t
+      # l_t is the label corresponding to x_t so it isn't a challenge to go from x_t to l_t
+      # y_t = f( x_t-1,  y_t-1 )
+      # p_t = f( y_t )
+      # predict l_t | p_t
+      logging.info('Predictor optimizing class. accuracy.')
+      logits = prediction_sg
+      labels = self._label_values
+
+      if self._hparams.label_smoothing > 0:
+        logging.info('Predictor using label smoothing: ')
+        ce_loss = tf.losses.softmax_cross_entropy(logits=prediction, onehot_labels=labels, label_smoothing=self._hparams.label_smoothing)
+      else:
+        logging.info('Predictor NOT using label smoothing: ')
+        ce_loss = tf.nn.softmax_cross_entropy_with_logits_v2(logits=prediction, labels=labels)
+
+      ce_loss_sum = tf.reduce_sum(ce_loss)
+      ce_loss_mean = tf.reduce_mean(ce_loss)
+      prediction_loss = ce_loss_mean
+      prediction_loss_sum = ce_loss_sum
+      self._dual.set_op(self.prediction_loss_sum, prediction_loss_sum)
+
+      # Correctness metrics
+      prediction_max = tf.argmax(prediction_sg, 1)
+      #prediction_max = tf.Print(prediction_max,[prediction_max, tf.argmax(labels, 1)],"Pmax, Truth")
+      self._dual.set_op(self.prediction_max, prediction_max)
+
+      labels_max = tf.argmax(labels, 1)
+      correct_predictions = tf.equal(labels_max, prediction_max)
+      correct_predictions = tf.cast(correct_predictions, tf.float32)
+      self._dual.set_op(self.prediction_correct, correct_predictions)
+
+      sum_correct_predictions = tf.reduce_sum(correct_predictions)
+      self._dual.set_op(self.prediction_correct_sum, sum_correct_predictions)
+      
+      # Perplexity metrics
+      perplexity = tf.exp(ce_loss_mean)
+      self._dual.set_op(self.prediction_perplexity, perplexity)
+
+    else:  # predictor constructs some arbitrary thing
+      # We should predict the current input x_t without using the current input x_t, instead only x_t-1
+      # y_t = f( x_t-1,  y_t-1 )
+      # y_t-1 = f( x_t-2, y_t-2 )
+      # p_t = f( y_t )
+      # predict x_t | p_t 
+      #         x_t | y_t
+      #         x_t | x_t-1, y_t-1
+      logging.info('Predictor optimizing reconstruction (MSE loss).')
+
+      # Predictions may need reshaping:
+      prediction_reshape = tf.reshape(prediction, self._target_shape)
+      self._dual.set_op(self.prediction_reshape, tf.stop_gradient(prediction_reshape))
+      prediction_loss = tf.losses.mean_squared_error(self._target_values, prediction_reshape)
+
+    # Both paths: Set the prediction loss
+    self._dual.set_op(self.prediction_loss, prediction_loss)
+
+    # Both paths: Regularization
+    if self._hparams.l2_regularizer == 0.0:
+      logging.info('NOT adding L2 weight regularization to predictor.')
+      self._dual.set_op(self.loss, prediction_loss)
+
+    else:  # L2 weight regularization
+      logging.info('Adding L2 weight regularization to predictor.')
+      all_losses = []
+      all_losses.append(prediction_loss)
+
+      layer_input_shape = self._input_shape
+
+      for i in range(self.num_layers):
+        layer = self.layers[i]
+
+        logging.debug('Pred. layer ' + str(i) + ' input shape: ' + str(layer_input_shape))
+        #output_shape = layer.output_shape()  # Dense layer, so [b, z]
+        layer_output_shape = [self._hparams.batch_size, self.layer_sizes[i]]
+        logging.debug('Pred. layer ' + str(i) + ' output shape: ' + str(layer_output_shape))
+        #num_cells = output_shape[1]
+        num_inputs = np.prod(layer_input_shape[1:])
+        num_cells = layer.weights[1].get_shape().as_list()[0]
+        logging.debug('Pred. layer ' + str(i) + ' #inputs: ' + str(num_inputs))
+        logging.debug('Pred. layer ' + str(i) + ' #cells: ' + str(num_cells))
+        logging.debug('Pred. layer ' + str(i) + ' #weights: ' + str(layer.weights))
+        l2_loss_w = tf.nn.l2_loss(layer.weights[0])
+        l2_loss_b = tf.nn.l2_loss(layer.weights[1])
+        l2_loss = tf.reduce_sum(l2_loss_w) + tf.reduce_sum(l2_loss_b)
+
+        # Make the L2 loss scaling invariant to number of weights. the +1 is for biases
+        l2_normalizer = 1.0 / (num_cells * (num_inputs+1.0))
+        l2_scale = l2_normalizer * self._hparams.l2_regularizer
+        l2_loss_scaled = l2_loss * l2_scale
+        all_losses.append(l2_loss_scaled)
+
+        i += 1
+        layer_input_shape = layer_output_shape
+
+      all_losses_op = tf.add_n(all_losses)
+      self._dual.set_op(self.loss, all_losses_op)
+
+  def _build_optimizer(self):
+    """Setup the training operations"""
+    with tf.variable_scope('optimizer', reuse=tf.AUTO_REUSE):
+      self._optimizer = tf_create_optimizer(self._hparams)
+      loss_op = self._dual.get_op(self.loss)
+      training_op = self._optimizer.minimize(loss_op, global_step=tf.train.get_or_create_global_step(), name='training_op')
+      self._dual.set_op(self.training, training_op)
+
+  # INTERFACE ------------------------------------------------------------------
+  def update_feed_dict(self, feed_dict, batch_type='training'):
+
+    keep_rate = None
+    if batch_type == self.training:
+      keep_rate = self._hparams.keep_rate # reduced rate during training
+    if batch_type == self.encoding:
+      keep_rate = 1.0 # No dropout at test time
+    logging.debug('keep rate: %f', keep_rate)
+
+    keep = self._dual.get(self.keep)
+    keep_pl = keep.get_pl()
+
+    feed_dict.update({
+        keep_pl: keep_rate
+    })
+
+  def add_fetches(self, fetches, batch_type='training'):
+
+    # Predict
+    fetches[self.name] = {
+        self.loss: self._dual.get_op(self.loss),
+        self.prediction: self._dual.get_op(self.prediction)
+    }
+
+    # Classify
+    if self._hparams.optimize == self.accuracy:
+      fetches[self.name].update({
+          self.prediction_loss_sum: self._dual.get_op(self.prediction_loss_sum),
+          self.prediction_correct: self._dual.get_op(self.prediction_correct),
+          self.prediction_max: self._dual.get_op(self.prediction_max),
+          self.prediction_softmax: self._dual.get_op(self.prediction_softmax),
+          self.prediction_perplexity: self._dual.get_op(self.prediction_perplexity),
+          'label_values': self._label_values
+      })
+
+    # Decide whether to train. Default training_interval: [0,-1]
+    do_training = tf_do_training(batch_type, self._hparams.training_interval, self._training_batch_count, name=self.name)
+    if do_training:
+      fetches[self.name].update({
+        self.training: self._dual.get_op(self.training)
+      })
+
+    # Summaries
+    super().add_fetches(fetches, batch_type)
+
+  def set_fetches(self, fetched, batch_type='training'):
+
+    if batch_type == self.training:
+      self._training_batch_count += 1
+
+    self_fetched = fetched[self.name]
+    self._loss = self_fetched[self.loss]
+
+    names = [self.prediction]
+    if self._hparams.optimize == self.accuracy:
+      names.append( self.prediction_loss_sum)
+      names.append(self.prediction_correct)
+      names.append(self.prediction_max)
+      names.append(self.prediction_softmax)
+      names.append(self.prediction_perplexity)
+
+    self._dual.set_fetches(fetched, names)
+
+    super().set_fetches(fetched, batch_type)
+
+  def _build_summaries(self, batch_type, max_outputs=3):
+    """Build the summaries for TensorBoard."""
+
+    # Summary parameters
+    max_perplexity = 1000.0
+    concat = True  # Makes it easier to compare input and decode/reconstruction output together
+    concat_axis = 1  # 1 = Y
+
+    summaries = []
+    if not self._hparams.summarize:
+      return summaries
+
+    # Input labels
+    if self._hparams.summarize_input:
+      labels = tf.reshape(self._label_values, shape=[-1, 1, self._label_values.get_shape()[1], 1])
+      logging.debug('Input labels shape: %s', str(labels))
+      labels_summary_op = tf.summary.image('labels', labels, max_outputs=max_outputs)
+      summaries.append(labels_summary_op)
+
+      # Input values (to do the prediction with)
+      logging.debug('Input values shape: %s', str(self._input_shape))
+      summary_input_shape = self._build_summary_input_shape(self._input_shape)
+      input_reshape = tf.reshape(self._input_values, summary_input_shape)
+      input_summary_op = tf.summary.image('input-summary', input_reshape, max_outputs=max_outputs)
+      summaries.append(input_summary_op)
+
+    prediction_op = None
+    if self._hparams.summarize_distribution:
+      # The actual raw prediction
+      prediction_op = self.get_prediction_op()  # 1d
+
+      # reshape raw prediction to labels shape.
+      summary_prediction_shape = [-1, 1, self._label_values.get_shape()[1], 1]
+      prediction = tf.reshape(prediction_op, shape=summary_prediction_shape)
+      prediction_summary_op = tf.summary.image('prediction-summary', prediction, max_outputs=max_outputs)
+      summaries.append(prediction_summary_op)
+
+    # Prediction loss
+    if self._dual.get(self.prediction_loss):
+      prediction_loss_summary = tf.summary.scalar(self.prediction_loss, self._dual.get_op(self.prediction_loss))
+      summaries.append(prediction_loss_summary)
+
+    # Mode-specific summaries
+    if self._hparams.optimize == self.accuracy:
+
+      # input_sum = self._dual.get_op('input-sum')
+      # input_sum_summary = tf.summary.scalar('input-sum', tf.reduce_sum(input_sum))
+      # summaries.append(input_sum_summary)
+
+      # hidden_sum = tf.reduce_sum(tf.abs(self._dual.get_op('hidden-output')))
+      # hidden_sum_summary = tf.summary.scalar('hidden-sum', hidden_sum)
+      # summaries.append(hidden_sum_summary)
+
+      if self._dual.get(self.prediction_correct_sum):
+        total_correct_predictions_summary = tf.summary.scalar(self.prediction_correct_sum,
+                                                              self._dual.get_op(self.prediction_correct_sum))
+        summaries.append(total_correct_predictions_summary)
+
+      if self._dual.get(self.prediction_perplexity):
+        perplexity = self._dual.get_op(self.prediction_perplexity)
+        perplexity_clipped = tf.minimum(max_perplexity, perplexity)
+        perplexity_summary = tf.summary.scalar(self.prediction_perplexity, perplexity_clipped)
+        summaries.append(perplexity_summary)
+
+      # if self._dual.get('perplexity-smoothed'):
+      #   perplexity = self._dual.get_op('perplexity-smoothed')
+      #   perplexity_clipped = tf.minimum(max_perplexity, perplexity)
+      #   perplexity_summary = tf.summary.scalar('perplexity-smoothed', perplexity_clipped)
+      #   summaries.append(perplexity_summary)
+
+    else: # reconstruct a target tensor
+
+      # Work out the ideal summary shape, given the actual target shape.
+      summary_target_shape = self._build_summary_target_shape(self._target_shape)
+      prediction = self._dual.get_op(self.prediction_reshape)  # Already target shape
+      prediction_reshape = tf.reshape(prediction, summary_target_shape)
+      target_reshape = tf.reshape(self._target_values, summary_target_shape)
+
+      if concat:
+        summary_target = tf.concat(
+            [target_reshape, prediction_reshape], axis=concat_axis)
+        target_summary_op = tf.summary.image('target-prediction', summary_target, max_outputs=max_outputs)
+        summaries.append(target_summary_op)
+      else:
+        target_summary_op = tf.summary.image('target', target_reshape, max_outputs=max_outputs)
+        summaries.append(target_summary_op)
+
+        reconstruction_summary_op = tf.summary.image('reconstruction', prediction_reshape, max_outputs=max_outputs)
+        summaries.append(reconstruction_summary_op)
+
+        if prediction_op is not None:
+          prediction_reconstruction_op = tf.summary.image('prediction-recon-summary', prediction,
+                                                          max_outputs=max_outputs)
+          summaries.append(prediction_reconstruction_op)
+
+    return summaries
+
+  def _build_summary_target_shape(self, target_shape):
+    summary_shape = image_utils.get_image_summary_shape(target_shape)
+    return summary_shape
+
+  def _build_summary_input_shape(self, input_shape):
+    summary_shape = image_utils.get_image_summary_shape(input_shape)
+    return summary_shape

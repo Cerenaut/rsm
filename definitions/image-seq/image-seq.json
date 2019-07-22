@@ -1,0 +1,40 @@
+{
+  "experiment-options": {
+    "workflow": "workflows.image_sequence_workflow",
+    "dataset": "datasets.mnist_sequence_dataset",
+    "component": "components.sequence_memory_stack",
+    "batches": 50000,
+    "hparams_override": {
+      "num_layers":1,
+      "batch_size": 300,
+
+      "memory_training_interval":[0,-1],
+      "memory_summarize_input":true,
+      "memory_summarize_encoding":true,
+      "memory_summarize_weights":true,
+      "memory_summarize_freq":true,
+
+      "predictor_optimize": "accuracy",
+      "predictor_nonlinearity":["leaky-relu","leaky-relu"],
+      "sparsity": [25],
+      "cols": [200],
+      "cells_per_col": [2],
+      "dends_per_cell": [2],
+      "freq_min": 0.01,
+      "inhibition_decay":[0.1],
+      "feedback_norm":[false],
+
+      "filters_field_width": 28,
+      "filters_field_height": 28,
+      "filters_field_stride": 28,
+
+      "lifetime_sparsity_cols": false,
+      "lifetime_sparsity_dends": false
+    }
+  },
+  "workflow-options": {
+    "summarize":true,
+    "sequence": "0123456789",
+    "example_type": "random"
+  }
+}
