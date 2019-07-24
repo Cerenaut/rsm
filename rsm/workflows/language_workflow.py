@@ -89,13 +89,13 @@ class LanguageWorkflow(Workflow):
 
       # Dataset for training
       train_dataset = self._dataset.get_train(options=self._opts)
-      train_dataset = train_dataset.apply(tf.contrib.data.batch_and_drop_remainder(self._hparams.batch_size))
+      train_dataset = train_dataset.batch(self._hparams.batch_size, drop_remainder=True)
       train_dataset = train_dataset.prefetch(1)
       train_dataset = train_dataset.repeat()  # repeats indefinitely
 
       # Dataset for testing
       test_dataset = self._dataset.get_test(options=self._opts)
-      test_dataset = test_dataset.apply(tf.contrib.data.batch_and_drop_remainder(self._hparams.batch_size))
+      test_dataset = test_dataset.batch(self._hparams.batch_size, drop_remainder=True)
       test_dataset = test_dataset.prefetch(1)
       test_dataset = test_dataset.repeat()  # repeats indefinitely
 
