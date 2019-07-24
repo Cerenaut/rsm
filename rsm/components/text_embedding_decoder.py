@@ -1,4 +1,4 @@
-# Copyright (C) 2018 Project AGI
+# Copyright (C) 2019 Project AGI
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -13,21 +13,13 @@
 # limitations under the License.
 # ==============================================================================
 
-"""TextEmbeddingDataset using the tf.data module."""
-
-import random
-import logging
-import os.path
+"""TextEmbeddingDecoder class."""
 
 import numpy as np
 import tensorflow as tf
 
-from pagi.utils.dual import DualData
-from pagi.utils.tf_utils import tf_print
-
-from pagi.datasets.dataset import Dataset
-
 from pagi.components.dual_component import DualComponent
+
 
 class TextEmbeddingDecoder(DualComponent):
   """Predicts from a 'path' of choices as in hierarchical language model."""
@@ -42,17 +34,16 @@ class TextEmbeddingDecoder(DualComponent):
 
   def build(self, prediction):
     """Generate the logits from a prediction per batch of the 'choices' in the a binary tree path to each leaf token."""
-
     prediction_4d_shape = prediction.get_shape().as_list()
     batch_size = prediction_4d_shape[0]
     embedding_2d_shape = self._dataset.get_embedding_shape()
-    num_words = self._dataset.num_classes 
-    num_bits = embedding_2d_shape[0]  
+    num_words = self._dataset.num_classes
+    num_bits = embedding_2d_shape[0]
     num_draws = embedding_2d_shape[1]
 
-    print("Prediction shape: ", prediction_4d_shape)  
-    print("# Batch: ", batch_size)  
-    print("Embedding shape: ", embedding_2d_shape)  
+    print("Prediction shape: ", prediction_4d_shape)
+    print("# Batch: ", batch_size)
+    print("Embedding shape: ", embedding_2d_shape)
     print("# Words: ", num_words)
     print("# Bits: ", num_bits)
     print("# Draws: ", num_draws)
@@ -72,19 +63,17 @@ class TextEmbeddingDecoder(DualComponent):
 
     # Load the embedding values once
     embedding = self._dataset.get_embedding()
-    matrix = np.reshape(embedding._matrix, embedding_3d_shape)
+    matrix = np.reshape(embedding.get_matrix(), embedding_3d_shape)
     self._dual.set_values(self.embedding, matrix)
 
     diff = tf.clip_by_value(prediction_4d, 0.0, 1.0) - embeddings_4d  # [b,h,w,d]
     inv_abs_diff = 1.0 - tf.abs(diff)  # implies the maximum diff is zero, i.e. the predictions must be unit.
-    #prediction_logits = tf.reduce_prod(inv_abs_diff, axis=[2,3], keepdims=False)  # [b,h,w,d] --> [b,h] ie batch x classes
-    prediction_logits = tf.reduce_sum(inv_abs_diff, axis=[2,3], keepdims=False)  # [b,h,w,d] --> [b,h] ie batch x classes
-    #prediction_logits = prediction_logits * prediction_logits
-    #prediction_logits = tf.Print(prediction_logits, [tf.reduce_min(prediction_logits),tf.reduce_max(prediction_logits)], message=' logits', summarize=100)
+    prediction_logits = tf.reduce_sum(inv_abs_diff, axis=[2, 3], keepdims=False)  # [b,h,w,d] --> [b,h] ie batch x classes
     return prediction_logits
 
-  # COMPONENT INTERFACE ------------------------------------------------------------------
+  # COMPONENT INTERFACE --------------------------------------------------------
   def update_feed_dict(self, feed_dict, batch_type='training'):
+    del batch_type
 
     names = [self.embedding]
     self._dual.update_feed_dict(feed_dict, names)
