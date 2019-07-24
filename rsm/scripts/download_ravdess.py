@@ -26,7 +26,7 @@ def main(dest):
         try:
           print('Downloading ', download_url, 'to', filepath)
           urllib.request.urlretrieve(download_url, filepath)
-        except:
+        except:  # pylint: disable=bare-except
           print('Failed to download. Skipping ', download_url)
 
       extract_dirpath = os.path.join(dest, datatype)
@@ -41,7 +41,7 @@ def main(dest):
           zip_ref = zipfile.ZipFile(filepath, 'r')
           zip_ref.extractall(extract_dirpath)
           zip_ref.close()
-        except:
+        except:  # pylint: disable=bare-except
           print('Failed to extract. Skipping ', filepath)
 
 

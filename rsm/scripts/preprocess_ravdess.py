@@ -29,20 +29,16 @@ from __future__ import print_function
 
 import os
 import random
-from os.path import isfile, join
 from collections import OrderedDict
 
 import cv2
 import h5py
 import numpy as np
-import matplotlib.pyplot as plt
-import matplotlib.image as mpimg
-from skimage.transform import resize
+import tensorflow as tf
 
 from tqdm import tqdm
-import numpy as np
-import scipy.io as spio
-import tensorflow as tf
+from skimage.transform import resize
+
 
 FLAGS = tf.flags.FLAGS
 
@@ -55,6 +51,7 @@ tf.flags.DEFINE_integer('max_shard', 0,
 
 
 def get_files(dirname):
+  """Get a list of files from the specified directory."""
   dir_list = os.listdir(dirname)
   all_files = list()
 
@@ -69,6 +66,7 @@ def get_files(dirname):
   return all_files
 
 def video_to_array(filepath):
+  """Process the video into an array."""
   cap = cv2.VideoCapture(filepath)
   num_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
   height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
@@ -95,8 +93,8 @@ def video_to_array(filepath):
 
   return frame_buffer
 
-def crop_center(img,cropx,cropy):
-  y, x, c = img.shape
+def crop_center(img, cropx, cropy):
+  y, x, _ = img.shape
   startx = x // 2 - (cropx // 2)
   starty = y // 2 - (cropy // 2)
   return img[starty:starty + cropy, startx:startx + cropx]
@@ -113,26 +111,29 @@ def bytes_feature(value):
   """Casts value to a TensorFlow bytes feature list."""
   if FLAGS.file_type == 'tfrecords':
     return tf.train.Feature(bytes_list=tf.train.BytesList(value=[value]))
+  return value
 
 
 def write_sharded_dataset(data, filename, max_shard, crop_size, image_size, file_type):
-    num_videos = len(data)
-    num_shards = int(np.ceil(num_videos / FLAGS.max_shard))
+  """Create a sharded version of the dataset."""
+  num_videos = len(data)
+  num_shards = int(np.ceil(num_videos / FLAGS.max_shard))
 
-    sharded_data = dict.fromkeys(range(num_shards))
+  sharded_data = dict.fromkeys(range(num_shards))
 
-    for i in range(num_shards):
-      start = i * max_shard
-      end = (i + 1) * max_shard
+  for i in range(num_shards):
+    start = i * max_shard
+    end = (i + 1) * max_shard
 
-      sharded_data[i] = data[start:end]
-      sharded_filename = (filename + '-{0}').format(i)
+    sharded_data[i] = data[start:end]
+    sharded_filename = (filename + '-{0}').format(i)
 
-      if not os.path.exists(sharded_filename):
-        write_dataset(sharded_data[i], sharded_filename, crop_size, image_size, file_type)
+    if not os.path.exists(sharded_filename):
+      write_dataset(sharded_data[i], sharded_filename, crop_size, image_size, file_type)
 
 
 def write_dataset(data, filename, crop_size, image_size, file_type):
+  """Write the dataset to disk."""
   writer = None
   output_data = []
   progress = tqdm(total=len(data))
@@ -191,8 +192,8 @@ def write_dataset(data, filename, crop_size, image_size, file_type):
       group = hf.create_group('data')
 
       dt = h5py.special_dtype(vlen=np.dtype('float32'))
-      features = hf.create_dataset('features', (len(output_data),), dtype=dt, compression='lzf')
-      labels = hf.create_dataset('labels', (len(output_data),), dtype=dt, compression='lzf')
+      hf.create_dataset('features', (len(output_data),), dtype=dt, compression='lzf')
+      hf.create_dataset('labels', (len(output_data),), dtype=dt, compression='lzf')
 
       for i, feature in enumerate(output_data):
         group.create_dataset(name='video_' + str(i),
@@ -208,6 +209,7 @@ def write_dataset(data, filename, crop_size, image_size, file_type):
 
 
 def read_data(filepaths):
+  """Read and process the video MP4 files from disk."""
   data = []
 
   for file in filepaths:
@@ -243,7 +245,7 @@ def main(_):
   filename = 'ravdess.' + FLAGS.file_type
 
   if FLAGS.max_shard > 0:
-      filename = 'sharded_' + filename
+    filename = 'sharded_' + filename
   filepath = os.path.join(FLAGS.data_dir, filename)
 
   if FLAGS.max_shard > 0:

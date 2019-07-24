@@ -23,7 +23,7 @@ import ast
 import json
 import random
 
-from itertools import tee, combinations
+from itertools import combinations
 from collections import OrderedDict
 from pprint import pprint
 
@@ -120,8 +120,8 @@ def main(_):
           next_id = 'SS' + str(j) + '_' + str(i + 1)
 
         transition = {
-          'state': symbol_to_state[symbol],
-          'next': next_id
+            'state': symbol_to_state[symbol],
+            'next': next_id
         }
 
         if next_ids[j] in transitions:
@@ -132,8 +132,8 @@ def main(_):
         next_ids[j] = transition['next']
 
     grammar = {
-      'grammar_states': states,
-      'grammar_transitions': transitions
+        'grammar_states': states,
+        'grammar_transitions': transitions
     }
 
     filename = 'grammar.local.json'

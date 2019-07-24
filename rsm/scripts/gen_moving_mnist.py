@@ -37,7 +37,7 @@ def arr_from_img(im, mean=0, std=1):
   return (np.asarray(arr, dtype=np.float32).reshape((width, height, c)) / 255. - mean) / std
 
 
-def get_image_from_array(X, index, mean=0, std=1):
+def get_image_from_array(image, index, mean=0, std=1):
   """
   Args:
       X: Dataset of shape N x C x W x H
@@ -47,8 +47,8 @@ def get_image_from_array(X, index, mean=0, std=1):
   Returns:
       Image with dimensions H x W x C or H x W if it's a single channel image
   """
-  w, h, ch= X.shape[1], X.shape[2], X.shape[3]
-  ret = (((X[index] + mean) * 255.) * std).reshape(w, h, ch).clip(0, 255).astype(np.uint8)
+  w, h, ch = image.shape[1], image.shape[2], image.shape[3]
+  ret = (((image[index] + mean) * 255.) * std).reshape(w, h, ch).clip(0, 255).astype(np.uint8)
   if ch == 1:
     ret = ret.reshape(h, w)
   return ret
@@ -105,7 +105,7 @@ def generate_moving_mnist(training, shape=(64, 64), num_frames=30, num_images=10
     veloc = np.asarray([(speed * math.cos(direc), speed * math.sin(direc)) for direc, speed in zip(direcs, speeds)])
     # Get a list containing two PIL images randomly sampled from the database
     mnist_images = [Image.fromarray(get_image_from_array(mnist, r, mean=0)).resize((original_size, original_size),
-                                                                                    Image.ANTIALIAS) \
+                                                                                   Image.ANTIALIAS) \
                     for r in np.random.randint(0, mnist.shape[0], nums_per_image)]
     # Generate tuples of (x,y) i.e initial positions for nums_per_image (default : 2)
     positions = np.asarray([(np.random.rand() * x_lim, np.random.rand() * y_lim) for _ in range(nums_per_image)])
@@ -142,13 +142,15 @@ def generate_moving_mnist(training, shape=(64, 64), num_frames=30, num_images=10
 
 def main(split, dest, filetype='npz', frame_size=64, num_frames=30, num_images=100, original_size=28,
          nums_per_image=2):
+  del split
+
   training = True
   if args.split == 'test':
     training = False
 
   dat = generate_moving_mnist(training, shape=(frame_size, frame_size), num_frames=num_frames, num_images=num_images, \
                               original_size=original_size, nums_per_image=nums_per_image)
-  n = num_images * num_frames
+
   if filetype == 'npz':
     np.savez(dest, dat)
   elif filetype == 'jpg':

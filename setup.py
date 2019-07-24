@@ -15,18 +15,15 @@
 
 """Installation Instructions."""
 
-import os
-import sys
-
-from setuptools import find_packages
-from setuptools import setup
+from setuptools import setup, find_packages
 from setuptools.command.install import install as InstallCommandBase
 from setuptools.dist import Distribution
 
-from setuptools import setup, find_packages
-
 install_requires = [
-    'pagi >= 0.1.0'
+    'pagi >= 0.1.0',
+    'opencv-python',
+    'h5py',
+    'tqdm'
 ]
 
 class BinaryDistribution(Distribution):
@@ -36,19 +33,19 @@ class BinaryDistribution(Distribution):
     return False
 
 setup(
-  name='pagi-rsm',
-  version='0.1.0',
-  author='ProjectAGI',
-  author_email='info@agi.io',
-  packages=find_packages(),
-  include_package_data=True,
-  url='https://github.com/ProjectAGI/rsm',
-  license='Apache 2.0',
-  description='Recurrent Sparse Memory.',
-  install_requires=install_requires,
-  distclass=BinaryDistribution,
-  cmdclass={
-      'pip_pkg': InstallCommandBase,
-  },
-  keywords='tensorflow memory machine learning'
+    name='pagi-rsm',
+    version='0.1.0',
+    author='ProjectAGI',
+    author_email='info@agi.io',
+    packages=find_packages(),
+    include_package_data=True,
+    url='https://github.com/ProjectAGI/rsm',
+    license='Apache 2.0',
+    description='Recurrent Sparse Memory.',
+    install_requires=install_requires,
+    distclass=BinaryDistribution,
+    cmdclass={
+        'pip_pkg': InstallCommandBase,
+    },
+    keywords='recurrent sparse memory pagi'
 )
