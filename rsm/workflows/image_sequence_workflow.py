@@ -1,4 +1,4 @@
-# Copyright (C) 2018 Project AGI
+# Copyright (C) 2019 Project AGI
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -71,7 +71,6 @@ class ImageSequenceWorkflow(Workflow):
         self._iterator = tf.data.Iterator.from_string_handle(self._placeholders['dataset_handle'],
                                                              train_dataset.output_types, train_dataset.output_shapes)
         self._init_iterators()
-        #self._inputs, self._labels = self._iterator.get_next()
 
         self._dataset_iterators = {}
 
@@ -104,7 +103,7 @@ class ImageSequenceWorkflow(Workflow):
     loss = self._component.get_values(SequenceMemoryStack.ensemble_loss_sum)
     return loss
 
-  def training(self, training_handle, training_step):
+  def training(self, training_handle, training_step, training_fetches=None):
     """The training procedure within the batch loop"""
 
     feed_dict = {
@@ -123,13 +122,12 @@ class ImageSequenceWorkflow(Workflow):
     self._component.write_summaries(training_step, self._writer, batch_type=batch_type)
 
     labels = training_fetched['labels']
-    predicted_labels = self._component.get_values(SequenceMemoryStack.ensemble_top_1)  #get_predicted_labels()
+    predicted_labels = self._component.get_values(SequenceMemoryStack.ensemble_top_1)
 
     if self._hparams.predictor_optimize == 'accuracy':
       accuracy = np_accuracy(predicted_labels, labels)
-      accuracy_average = self._moving_average.update('accuracy', accuracy, self._writer, batch_type, batch=training_step, prefix=self._component.name)
-      # accuracy, accuracy_average = self._compute_accuracy(predictions, labels)
-      # self._write_accuracy_summary(training_step, accuracy, accuracy_average, batch_type)
+      self._moving_average.update('accuracy', accuracy, self._writer, batch_type, batch=training_step,
+                                  prefix=self._component.name)
 
     # Output as feedback for next step
     self._component.update_recurrent()
@@ -139,6 +137,7 @@ class ImageSequenceWorkflow(Workflow):
 
   def run(self, num_batches, evaluate, train=True):
     """Run Experiment"""
+    del evaluate
 
     if train:
       training_handle = self._session.run(self._dataset_iterators['training'].string_handle())
@@ -152,7 +151,7 @@ class ImageSequenceWorkflow(Workflow):
         training_epoch = self._dataset.get_training_epoch(self._hparams.batch_size, training_step)
 
         # Perform the training, and retrieve feed_dict for evaluation phase
-        self.training(training_handle, batch)
+        feed_dict = self.training(training_handle, batch)
 
         self._on_after_training_batch(batch, training_step, training_epoch)
 
@@ -160,7 +159,7 @@ class ImageSequenceWorkflow(Workflow):
         # -------------------------------------------------------------------------
         if self._export_opts['export_filters']:
           if (batch + 1) % self._export_opts['interval_batches'] == 0:
-            self.export(self._session)
+            self.export(self._session, feed_dict)
 
         if self._export_opts['export_checkpoint']:
           if (batch + 1) % num_batches == 0:
@@ -188,7 +187,7 @@ class ImageSequenceWorkflow(Workflow):
   def _compute_sequence_error(self, batch, predictions, labels):
     """Builds a sequence error bin for histogram summary."""
     sequence_len = len(self._opts['sequence'])
-    correct_predictions = np.equal(labels, predictions)
+    correct_predictions = np.equal(labels, predictions)  # pylint: disable=assignment-from-no-return
     sequence_bins = dict.fromkeys(list(range(sequence_len)), 0)
 
     offset = batch
@@ -208,10 +207,11 @@ class ImageSequenceWorkflow(Workflow):
         input=tf.zeros(num_bins, tf.float32), shape=num_bins, name='sequence_error')
     self._sequence_error_summary = dict.fromkeys(batch_types)
 
+    h, w, dim, pad = 20, 20, 1, 2
+    grid_shape = [h + (2 * pad), (w + (2 * pad)) * num_bins, dim]
+
     for batch_type in batch_types:
       with tf.name_scope(self._component.name + '/summaries/' + batch_type):
-        h, w, dim, pad = 20, 20, 1, 2
-        grid_shape = [h + (2 * pad), (w + (2 * pad)) * num_bins, dim]
 
         def image_to_grid(sequence_error):
           """Converts an image vector to a grid with borders."""

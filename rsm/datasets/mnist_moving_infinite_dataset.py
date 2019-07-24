@@ -1,4 +1,4 @@
-# Copyright (C) 2018 Project AGI
+# Copyright (C) 2019 Project AGI
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -13,16 +13,12 @@
 # limitations under the License.
 # ==============================================================================
 
-"""MNISTMovingDataset class."""
+"""MNISTMovingInfiniteDataset class."""
 
 import os
-import re
-import sys
 import math
 import gzip
 import logging
-import random
-import struct
 
 from urllib.request import urlretrieve
 from PIL import Image
@@ -52,10 +48,12 @@ class MNISTMovingInfiniteDataset(MNISTMovingDataset):  # pylint: disable=W0223
 
   def get_train(self, preprocess=False, options=None):  # pylint: disable=W0221
     """tf.data.Dataset object for MNIST training data."""
+    del preprocess
     return self._dataset(training=True, options=options)
 
   def get_test(self, preprocess=False, options=None):  # pylint: disable=W0221
     """tf.data.Dataset object for MNIST test data."""
+    del preprocess
     return self._dataset(training=False, options=options)
 
   def set_batch_size(self, batch_size):
@@ -77,7 +75,7 @@ class MNISTMovingInfiniteDataset(MNISTMovingDataset):  # pylint: disable=W0223
 
     return (np.asarray(arr, dtype=np.float32).reshape((width, height, c)) / 255. - mean) / std
 
-  def _get_image_from_array(self, X, index, mean=0, std=1):
+  def _get_image_from_array(self, image, index, mean=0, std=1):
     """
     Args:
         X: Dataset of shape N x C x W x H
@@ -87,8 +85,8 @@ class MNISTMovingInfiniteDataset(MNISTMovingDataset):  # pylint: disable=W0223
     Returns:
         Image with dimensions H x W x C or H x W if it's a single channel image
     """
-    w, h, ch= X.shape[1], X.shape[2], X.shape[3]
-    ret = (((X[index] + mean) * 255.) * std).reshape(w, h, ch).clip(0, 255).astype(np.uint8)
+    w, h, ch = image.shape[1], image.shape[2], image.shape[3]
+    ret = (((image[index] + mean) * 255.) * std).reshape(w, h, ch).clip(0, 255).astype(np.uint8)
     if ch == 1:
       ret = ret.reshape(h, w)
     return ret
@@ -117,6 +115,7 @@ class MNISTMovingInfiniteDataset(MNISTMovingDataset):  # pylint: disable=W0223
     return data / np.float32(255)
 
   def _load_moving_mnist_dataset(self):
+    """Load the Moving MNIST test set."""
     filename = 'mnist_test_seq.npy'
     dirpath = os.path.join(self._directory, self._name)
     filepath = os.path.join(dirpath, filename)
@@ -151,6 +150,7 @@ class MNISTMovingInfiniteDataset(MNISTMovingDataset):  # pylint: disable=W0223
     return sequences, states
 
   def _get_sequence(self, training):
+    """Sample a sequence from the training or test set."""
     if training:
       sequence = self._get_train_sequence()
     else:
@@ -298,15 +298,15 @@ class MNISTMovingInfiniteDataset(MNISTMovingDataset):  # pylint: disable=W0223
 
         paddings = [pad_h, pad_w, [0, 0]]
         image = tf.pad(image, paddings,
-                              constant_values=options['frame_padding_value'])
+                       constant_values=options['frame_padding_value'])
 
       return image, label, state
 
     dataset = tf.data.Dataset.from_generator(generator, output_types=(tf.float32, tf.int32, tf.bool),
                                              output_shapes=(
-                                                  tf.TensorShape([self.IMAGE_DIM, self.IMAGE_DIM, 1]),
-                                                  tf.TensorShape([]),
-                                                  tf.TensorShape([])))
+                                                 tf.TensorShape([self.IMAGE_DIM, self.IMAGE_DIM, 1]),
+                                                 tf.TensorShape([]),
+                                                 tf.TensorShape([])))
     dataset = dataset.map(preprocess)
 
     return dataset

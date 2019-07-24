@@ -1,4 +1,4 @@
-# Copyright (C) 2018 Project AGI
+# Copyright (C) 2019 Project AGI
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -13,43 +13,26 @@
 # limitations under the License.
 # ==============================================================================
 
-"""SequenceMemoryLayer class."""
+"""PredictorComponent class."""
 
 from __future__ import absolute_import
 from __future__ import division
 from __future__ import print_function
 
-import sys
-import logging
-import math
-
-import os
-from os.path import dirname, abspath
-
 import numpy as np
 import tensorflow as tf
 
 from pagi.utils import image_utils
-from pagi.utils.dual import DualData
 from pagi.utils.layer_utils import type_activation_fn
-from pagi.utils.tf_utils import tf_build_stats_summaries
-from pagi.utils.tf_utils import tf_build_top_k_mask_4d_op
-from pagi.utils.tf_utils import tf_build_varying_top_k_mask_4d_op
-from pagi.utils.tf_utils import tf_build_perplexity
-from pagi.utils.tf_utils import tf_build_cross_entropy
 from pagi.utils.tf_utils import tf_create_optimizer
-from pagi.utils.tf_utils import tf_build_interpolate_distributions
 from pagi.utils.tf_utils import tf_do_training
-from pagi.utils.np_utils import np_uniform
-from pagi.utils.np_utils import np_interpolate_distributions
 
 from pagi.components.summary_component import SummaryComponent
-from pagi.components.sparse_conv_autoencoder_component import SparseConvAutoencoderComponent
 
 
 class PredictorComponent(SummaryComponent):
   """
-  A stack of fully-connected dense layers for a supervised function approximation purpose, 
+  A stack of fully-connected dense layers for a supervised function approximation purpose,
   such as classification.
   """
 
@@ -77,7 +60,7 @@ class PredictorComponent(SummaryComponent):
     return tf.contrib.training.HParams(
 
         # Optimizer options
-        training_interval=[0,-1],
+        training_interval=[0, -1],
         loss_type='cross-entropy',  # or mse
         optimize='accuracy',  # target, accuracy
         optimizer='adam',
@@ -85,9 +68,6 @@ class PredictorComponent(SummaryComponent):
         momentum=0.9,  # Ignore if adam
         momentum_nesterov=False,
 
-        # cache_decay=0.9,
-        # cache_mass=0.0,
-        #uniform_mass=0.0,
         nonlinearity=['leaky-relu'],
 
         # Geometry
@@ -96,7 +76,6 @@ class PredictorComponent(SummaryComponent):
 
         # Regularization
         keep_rate=1.0,
-        #keep_rate_input=1.0,  # disused
         l2_regularizer=0.0,
         label_smoothing=0.0,  # adds a uniform weight to the training target distribution
 
@@ -105,36 +84,6 @@ class PredictorComponent(SummaryComponent):
         summarize_input=False,
         summarize_distribution=False
     )
-
-  def __init__(self):
-    super().__init__()
-
-  # def get_prediction_softmax_op(self):
-  #   return self._dual.get_op('prediction-softmax')
-
-  # def get_prediction_softmax(self):
-  #   return self._dual.get_values('prediction-softmax')
-
-  # def get_prediction_op(self):
-  #   return self._dual.get_op('prediction')
-
-  # def get_prediction(self):
-  #   return self._dual.get_values('prediction')
-
-  # def get_correct_predictions(self):
-  #   return self._dual.get_values('correct_predictions')
-
-  # def get_predicted_logits(self):
-  #   return self._dual.get_values('prediction')
-
-  # def get_predicted_labels(self):
-  #   return self._dual.get_values('prediction_max')
-
-  # def get_perplexity(self):
-  #   return self._dual.get_values('perplexity')
-
-  # def get_perplexity_smoothed(self):
-  #   return self._dual.get_values('perplexity-smoothed')
 
   def get_loss(self):
     return self._loss
@@ -145,7 +94,8 @@ class PredictorComponent(SummaryComponent):
 
     # TODO this should reinitialize all the variables..
 
-  def build(self, input_values, input_shape, label_values, label_shape, target_values, target_shape, hparams, name='predictor'):  # pylint: disable=W0221
+  def build(self, input_values, input_shape, label_values, label_shape, target_values, target_shape, hparams,
+            name='predictor'):  # pylint: disable=W0221
     """Initializes the model parameters.
 
     Args:
@@ -181,7 +131,6 @@ class PredictorComponent(SummaryComponent):
     """Build the autoencoder network"""
 
     # Flatten inputs
-    #input_shape_list = self._input_values.get_shape().as_list()
     input_volume = np.prod(self._input_shape[1:])
     input_shape_1d = [self._hparams.batch_size, input_volume]
     input_values_1d = tf.reshape(self._input_values, input_shape_1d)
@@ -209,11 +158,6 @@ class PredictorComponent(SummaryComponent):
     for i, layer_size in enumerate(layer_sizes):
       activation = type_activation_fn(self._hparams.nonlinearity[i])
 
-      # Empirically, it helps to have that final nonlinearity. Unexpected.
-      # # Disable output layer nonlinearity?
-      # if i == (self.num_layers -1):  # We don't want a nonlinearity before softmax
-      #   activation = None
-
       layer = tf.layers.Dense(layer_size, activation=activation, use_bias=True, name='prediction_layer_' + str(i + 1))
       logging.info('Predictor layer: %d has size: %d and fn: %s ', i, layer_size, str(activation))
       self.layers.append(layer)
@@ -233,7 +177,7 @@ class PredictorComponent(SummaryComponent):
 
       layer_output = layer(layer_input)
       layer_input = layer_output
-      
+
     prediction = layer_input  # output of last layer (1d)
     prediction_sg = tf.stop_gradient(prediction)
     self._dual.set_op(self.prediction, prediction_sg)
@@ -250,13 +194,13 @@ class PredictorComponent(SummaryComponent):
       # y_t = f( x_t-1,  y_t-1 )
       # p_t = f( y_t )
       # predict l_t | p_t
-      logging.info('Predictor optimizing class. accuracy.')
-      logits = prediction_sg
+      logging.info('Predictor optimizing classification accuracy.')
       labels = self._label_values
 
       if self._hparams.label_smoothing > 0:
         logging.info('Predictor using label smoothing: ')
-        ce_loss = tf.losses.softmax_cross_entropy(logits=prediction, onehot_labels=labels, label_smoothing=self._hparams.label_smoothing)
+        ce_loss = tf.losses.softmax_cross_entropy(logits=prediction, onehot_labels=labels,
+                                                  label_smoothing=self._hparams.label_smoothing)
       else:
         logging.info('Predictor NOT using label smoothing: ')
         ce_loss = tf.nn.softmax_cross_entropy_with_logits_v2(logits=prediction, labels=labels)
@@ -269,7 +213,6 @@ class PredictorComponent(SummaryComponent):
 
       # Correctness metrics
       prediction_max = tf.argmax(prediction_sg, 1)
-      #prediction_max = tf.Print(prediction_max,[prediction_max, tf.argmax(labels, 1)],"Pmax, Truth")
       self._dual.set_op(self.prediction_max, prediction_max)
 
       labels_max = tf.argmax(labels, 1)
@@ -279,7 +222,7 @@ class PredictorComponent(SummaryComponent):
 
       sum_correct_predictions = tf.reduce_sum(correct_predictions)
       self._dual.set_op(self.prediction_correct_sum, sum_correct_predictions)
-      
+
       # Perplexity metrics
       perplexity = tf.exp(ce_loss_mean)
       self._dual.set_op(self.prediction_perplexity, perplexity)
@@ -289,7 +232,7 @@ class PredictorComponent(SummaryComponent):
       # y_t = f( x_t-1,  y_t-1 )
       # y_t-1 = f( x_t-2, y_t-2 )
       # p_t = f( y_t )
-      # predict x_t | p_t 
+      # predict x_t | p_t
       #         x_t | y_t
       #         x_t | x_t-1, y_t-1
       logging.info('Predictor optimizing reconstruction (MSE loss).')
@@ -318,10 +261,10 @@ class PredictorComponent(SummaryComponent):
         layer = self.layers[i]
 
         logging.debug('Pred. layer ' + str(i) + ' input shape: ' + str(layer_input_shape))
-        #output_shape = layer.output_shape()  # Dense layer, so [b, z]
+
         layer_output_shape = [self._hparams.batch_size, self.layer_sizes[i]]
         logging.debug('Pred. layer ' + str(i) + ' output shape: ' + str(layer_output_shape))
-        #num_cells = output_shape[1]
+
         num_inputs = np.prod(layer_input_shape[1:])
         num_cells = layer.weights[1].get_shape().as_list()[0]
         logging.debug('Pred. layer ' + str(i) + ' #inputs: ' + str(num_inputs))
@@ -348,12 +291,13 @@ class PredictorComponent(SummaryComponent):
     with tf.variable_scope('optimizer', reuse=tf.AUTO_REUSE):
       self._optimizer = tf_create_optimizer(self._hparams)
       loss_op = self._dual.get_op(self.loss)
-      training_op = self._optimizer.minimize(loss_op, global_step=tf.train.get_or_create_global_step(), name='training_op')
+      training_op = self._optimizer.minimize(loss_op, global_step=tf.train.get_or_create_global_step(),
+                                             name='training_op')
       self._dual.set_op(self.training, training_op)
 
   # INTERFACE ------------------------------------------------------------------
   def update_feed_dict(self, feed_dict, batch_type='training'):
-
+    """Update the feed dict for the session call."""
     keep_rate = None
     if batch_type == self.training:
       keep_rate = self._hparams.keep_rate # reduced rate during training
@@ -369,7 +313,7 @@ class PredictorComponent(SummaryComponent):
     })
 
   def add_fetches(self, fetches, batch_type='training'):
-
+    """Add the fetches for the session call."""
     # Predict
     fetches[self.name] = {
         self.loss: self._dual.get_op(self.loss),
@@ -388,17 +332,18 @@ class PredictorComponent(SummaryComponent):
       })
 
     # Decide whether to train. Default training_interval: [0,-1]
-    do_training = tf_do_training(batch_type, self._hparams.training_interval, self._training_batch_count, name=self.name)
+    do_training = tf_do_training(batch_type, self._hparams.training_interval, self._training_batch_count,
+                                 name=self.name)
     if do_training:
       fetches[self.name].update({
-        self.training: self._dual.get_op(self.training)
+          self.training: self._dual.get_op(self.training)
       })
 
     # Summaries
     super().add_fetches(fetches, batch_type)
 
   def set_fetches(self, fetched, batch_type='training'):
-
+    """Set the fetches from the output of the session call."""
     if batch_type == self.training:
       self._training_batch_count += 1
 
@@ -407,7 +352,7 @@ class PredictorComponent(SummaryComponent):
 
     names = [self.prediction]
     if self._hparams.optimize == self.accuracy:
-      names.append( self.prediction_loss_sum)
+      names.append(self.prediction_loss_sum)
       names.append(self.prediction_correct)
       names.append(self.prediction_max)
       names.append(self.prediction_softmax)
@@ -419,6 +364,7 @@ class PredictorComponent(SummaryComponent):
 
   def _build_summaries(self, batch_type, max_outputs=3):
     """Build the summaries for TensorBoard."""
+    del batch_type
 
     # Summary parameters
     max_perplexity = 1000.0
@@ -461,15 +407,6 @@ class PredictorComponent(SummaryComponent):
 
     # Mode-specific summaries
     if self._hparams.optimize == self.accuracy:
-
-      # input_sum = self._dual.get_op('input-sum')
-      # input_sum_summary = tf.summary.scalar('input-sum', tf.reduce_sum(input_sum))
-      # summaries.append(input_sum_summary)
-
-      # hidden_sum = tf.reduce_sum(tf.abs(self._dual.get_op('hidden-output')))
-      # hidden_sum_summary = tf.summary.scalar('hidden-sum', hidden_sum)
-      # summaries.append(hidden_sum_summary)
-
       if self._dual.get(self.prediction_correct_sum):
         total_correct_predictions_summary = tf.summary.scalar(self.prediction_correct_sum,
                                                               self._dual.get_op(self.prediction_correct_sum))
@@ -480,12 +417,6 @@ class PredictorComponent(SummaryComponent):
         perplexity_clipped = tf.minimum(max_perplexity, perplexity)
         perplexity_summary = tf.summary.scalar(self.prediction_perplexity, perplexity_clipped)
         summaries.append(perplexity_summary)
-
-      # if self._dual.get('perplexity-smoothed'):
-      #   perplexity = self._dual.get_op('perplexity-smoothed')
-      #   perplexity_clipped = tf.minimum(max_perplexity, perplexity)
-      #   perplexity_summary = tf.summary.scalar('perplexity-smoothed', perplexity_clipped)
-      #   summaries.append(perplexity_summary)
 
     else: # reconstruct a target tensor
 

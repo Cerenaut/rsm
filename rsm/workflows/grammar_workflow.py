@@ -1,4 +1,4 @@
-# Copyright (C) 2018 Project AGI
+# Copyright (C) 2019 Project AGI
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -19,8 +19,6 @@ from __future__ import absolute_import
 from __future__ import division
 from __future__ import print_function
 
-import logging
-
 import numpy as np
 import tensorflow as tf
 
@@ -31,6 +29,7 @@ from rsm.workflows.image_sequence_workflow import ImageSequenceWorkflow
 
 from rsm.components.sequence_memory_stack import SequenceMemoryStack
 from rsm.components.sequence_memory_layer import SequenceMemoryLayer
+
 
 class GrammarWorkflow(ImageSequenceWorkflow):
   """Sequence memory workflow for grammar-based problems. The grammar is used to generate sequences."""
@@ -44,7 +43,7 @@ class GrammarWorkflow(ImageSequenceWorkflow):
   def __init__(self, session, dataset_type, dataset_location, component_type, hparams_override, eval_opts, export_opts,
                opts=None, summarize=True, seed=None, summary_dir=None, checkpoint_opts=None):
     super().__init__(session, dataset_type, dataset_location, component_type, hparams_override, eval_opts, export_opts,
-               opts, summarize, seed, summary_dir, checkpoint_opts)
+                     opts, summarize, seed, summary_dir, checkpoint_opts)
     self._batch_ts_losses = []
 
   @staticmethod
@@ -65,32 +64,6 @@ class GrammarWorkflow(ImageSequenceWorkflow):
         specific_examples=[1, 3, 5, 7, 2, 0, 13, 15, 17, 4]  # Used with "specific", indexed by label
     )
 
-  # def _setup_dataset(self):
-  #   """Setup the dataset and retrieve inputs, labels and initializers"""
-  #   with tf.variable_scope('dataset'):
-  #     self._dataset = self._dataset_type(self._dataset_location)
-  #     self._dataset.set_batch_size(self._hparams.batch_size)
-
-  #     # Dataset for training
-  #     train_dataset = self._dataset.get_train(options=self._opts)
-  #     train_dataset = train_dataset.apply(tf.contrib.data.batch_and_drop_remainder(self._hparams.batch_size))
-  #     train_dataset = train_dataset.prefetch(1)
-  #     train_dataset = train_dataset.repeat()  # repeats indefinitely
-
-  #     self._placeholders['dataset_handle'] = tf.placeholder(
-  #         tf.string, shape=[], name='dataset_handle')
-
-  #     # Setup dataset iterators
-  #     with tf.variable_scope('dataset_iterators'):
-  #       self._iterator = tf.data.Iterator.from_string_handle(self._placeholders['dataset_handle'],
-  #                                                            train_dataset.output_types, train_dataset.output_shapes)
-  #       self._inputs, self._labels, self._states = self._iterator.get_next()
-
-  #       self._dataset_iterators = {}
-
-  #       with tf.variable_scope('train_dataset'):
-  #         self._dataset_iterators['training'] = train_dataset.make_initializable_iterator()
-
   def _init_iterators(self):
     self._inputs, self._labels, self._states = self._iterator.get_next()
 
@@ -108,7 +81,7 @@ class GrammarWorkflow(ImageSequenceWorkflow):
     :param losses for computing direct vom recon lost for 'test states'
     :return accuracy, accuracy_average
     """
-    
+
     accuracy, accuracy_average, loss, loss_average = None, None, None, None
 
     # Compute correct predictions from test states only
@@ -121,7 +94,7 @@ class GrammarWorkflow(ImageSequenceWorkflow):
       is_test_state = self._opts['grammar_states'][state]['test']
 
       if is_test_state:
-        correct_prediction = np.equal(label, pred)
+        correct_prediction = np.equal(label, pred)  # pylint: disable=assignment-from-no-return
         correct_predictions.append(correct_prediction)
         sum_loss += loss    # sum of recon loss for all test states, for the batch
         self._batch_ts_losses.append(loss)
@@ -142,16 +115,12 @@ class GrammarWorkflow(ImageSequenceWorkflow):
 
     # Track per-batch accuracy & compute average accuracy ever N batches
     if len(self.TEST_STATE_PREDICTIONS_COLLECTION['num_states']) == self._opts['average_accuracy_interval']:
-      # print('num_states collection', self.TEST_STATE_PREDICTIONS_COLLECTION['num_states'])
-      # print('num_correct collection', self.TEST_STATE_PREDICTIONS_COLLECTION['num_correct'])
 
       num_states_sum = np.sum(self.TEST_STATE_PREDICTIONS_COLLECTION['num_states'])
       num_correct_sum = np.sum(self.TEST_STATE_PREDICTIONS_COLLECTION['num_correct'])
       sum_loss_sum = np.sum(self.TEST_STATE_PREDICTIONS_COLLECTION['loss'])   # sum of 'batch sum of recon loss'
-      # print('num_states_sum', num_states_sum, 'num_correct_sum', num_correct_sum)
 
       accuracy_average = num_correct_sum / num_states_sum
-      # print('accuracy_average', accuracy_average)
 
       loss_average = sum_loss_sum / float(num_states_sum)
 
@@ -163,22 +132,6 @@ class GrammarWorkflow(ImageSequenceWorkflow):
       }
 
     return accuracy, accuracy_average, loss, loss_average
-
-  # def _compute_accuracy(self, predictions, labels):
-  #   """Calculate the accuracy and average accuracy over N batches."""
-  #   correct_predictions = np.equal(labels, predictions)
-  #   accuracy = np.mean(correct_predictions)
-
-  #   # Track per-batch accuracy & compute average accuracy ever N batches
-  #   accuracy_average = None
-  #   self.ACCURACY_COLLECTION.append(accuracy)
-
-  #   if len(self.ACCURACY_COLLECTION) == self._opts['average_accuracy_every_n']:
-  #     accuracy_average = np.mean(self.ACCURACY_COLLECTION)
-  #     # Reset the collection
-  #     self.ACCURACY_COLLECTION = []  # pylint: disable=C0103
-
-  #   return accuracy, accuracy_average
 
   def _compute_sequence_error(self, batch, predictions, labels, states):  # pylint: disable=W0221
     """Builds a sequence error bin for histogram summary."""
@@ -196,8 +149,7 @@ class GrammarWorkflow(ImageSequenceWorkflow):
     if accuracy is None and accuracy_average is None and loss is None and loss_average is None:
       return
 
-    # print('batch', batch, 'accuracy:', accuracy, 'accuracy_average:', accuracy_average)
-    if self._batch_ts_losses is not None and len(self._batch_ts_losses) > 0:
+    if self._batch_ts_losses:
       summary = tf_utils.histogram_summary(tag=self._component.name + '/summaries/' + batch_type + '/ts_batch_loss',
                                            values=self._batch_ts_losses)
     else:
@@ -221,19 +173,19 @@ class GrammarWorkflow(ImageSequenceWorkflow):
 
   def _compute_end_state_mask(self, labels, states):
     """Detect end of sequence and clear the component's history."""
+    del labels
 
     history_mask = np.ones(self._hparams.batch_size)
 
     for b in range(self._hparams.batch_size):
       state = states[b].decode('utf-8')  # bytes -> string
       is_end_state = self._opts['grammar_states'][state]['end']
-      #print("b:", b, " state:", state, " end?:", is_end_state)
       if is_end_state:
         history_mask[b] = 0.0
 
     self._component.update_history(self._session, history_mask)
 
-  def training(self, training_handle, training_step):
+  def training(self, training_handle, training_step):  # pylint: disable=arguments-differ
     """The training procedure within the batch loop"""
 
     feed_dict = {
@@ -253,13 +205,10 @@ class GrammarWorkflow(ImageSequenceWorkflow):
 
     states = training_fetched['states']
     labels = training_fetched['labels']
-    #predictions = self._component.get_predicted_labels()
-    predicted_labels = self._component.get_values(SequenceMemoryStack.ensemble_top_1)  #get_predicted_labels()
-    #sample_loss = self._component.get_sample_loss()
-    sample_loss = self._component._layers[0].get_values(SequenceMemoryLayer.sum_abs_error)
-    #print( "States: ", states[0] )
-    #print( "Labels: ", labels[0] )
-    #print( "Predictions: ", predictions[0] )
+
+    predicted_labels = self._component.get_values(SequenceMemoryStack.ensemble_top_1)
+    sample_loss = self._component.get_layer(0).get_values(SequenceMemoryLayer.sum_abs_error)
+
     self._compute_end_state_mask(labels, states)
 
     # Classification metrics
@@ -274,20 +223,17 @@ class GrammarWorkflow(ImageSequenceWorkflow):
 
       # Compute test state accuracy only if grammar has any test states
       if has_any_test_state:
-        ts_accuracy, ts_accuracy_average, ts_loss, ts_loss_average = self._compute_test_state_accuracy(predicted_labels,
-                                                                                                      labels,
-                                                                                                      states,
-                                                                                                      sample_loss)
+        ts_accuracy, ts_accuracy_average, ts_loss, ts_loss_average = self._compute_test_state_accuracy(
+            predicted_labels, labels, states, sample_loss)
 
         self._write_test_state_accuracy_summary(training_step, ts_accuracy, ts_accuracy_average, ts_loss,
-                                                ts_loss_average,
-                                                batch_type)
+                                                ts_loss_average, batch_type)
 
       sequence_error = self._compute_sequence_error(training_step, predicted_labels, labels, states)
       self._write_sequence_error_summary(training_step, sequence_error, batch_type)
 
     # Output as feedback for next step
     self._component.update_recurrent_and_feedback()
-    self._component.update_statistics(self._session) # only when training
+    self._component.update_statistics(self._session)
 
     return feed_dict

@@ -29,6 +29,7 @@ from pagi.components.composite_component import CompositeComponent
 from pagi.components.sparse_conv_autoencoder_component import SparseConvAutoencoderComponent
 
 class SparseConvAutoencoderStack(CompositeComponent):
+  """A composite component with N layers of k-sparse convolutional autoencoders."""
 
   @staticmethod
   def default_hparams():
@@ -71,11 +72,13 @@ class SparseConvAutoencoderStack(CompositeComponent):
     self._name = name
     self._hparams = hparams
     self._dual = DualData(self._name)
+    self._encoding_shape = encoding_shape
 
     with tf.variable_scope(self._name, reuse=tf.AUTO_REUSE):
       self._build_layers(input_values, input_shape)
 
   def _build_layers(self, input_values, input_shape):
+    """Builds N layers of k-Sparse convolutional autoencoders."""
     logging.info('Building layers...')
 
     layers_hparams = []

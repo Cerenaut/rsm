@@ -19,11 +19,8 @@ from __future__ import absolute_import
 from __future__ import division
 from __future__ import print_function
 
-import logging
-
 import tensorflow as tf
 
-from pagi.utils.dual import DualData
 from pagi.utils.hparam_multi import HParamMulti
 from pagi.components.composite_component import CompositeComponent
 
@@ -31,6 +28,7 @@ from rsm.components.sequence_memory_stack import SequenceMemoryStack
 from rsm.components.sparse_conv_autoencoder_stack import SparseConvAutoencoderStack
 
 class CompositeRSMStack(CompositeComponent):
+  """A composite component consisting of a stack of k-Sparse convolutional autoencoders and a stack of RSM layers."""
 
   ae_name = 'ae_stack'
   rsm_name = 'rsm_stack'
@@ -88,7 +86,7 @@ class CompositeRSMStack(CompositeComponent):
   def get_loss(self):
     return self.get_sub_component('output').get_loss()
 
-  def get_dual(self, name=None):
+  def get_dual(self, name=None):  # pylint: disable=arguments-differ
     if name is None:
       return self._dual
     return self.get_sub_component(name).get_dual()
@@ -119,9 +117,10 @@ class CompositeRSMStack(CompositeComponent):
       if self._hparams.build_rsm:
         self._build_rsm_stack(input_values_next, input_shape_next, label_values, label_shape, decoder)
 
-        self._layers = self.get_sub_component(self.rsm_name)._layers
+        self._layers = self.get_sub_component(self.rsm_name).get_layers()
 
   def _build_ae_stack(self, input_values, input_shape):
+    """Builds a stack of k-Sparse convolutional autoencoders."""
     ae_stack = SparseConvAutoencoderStack()
     ae_stack_hparams = SparseConvAutoencoderStack.default_hparams()
 
@@ -135,6 +134,7 @@ class CompositeRSMStack(CompositeComponent):
     return input_values_next, input_shape_next
 
   def _build_rsm_stack(self, input_values, input_shape, label_values=None, label_shape=None, decoder=None):
+    """Builds a stack of RSM layers."""
     rsm_stack = SequenceMemoryStack()
     rsm_stack_hparams = SequenceMemoryStack.default_hparams()
 

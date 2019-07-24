@@ -16,10 +16,6 @@
 """RAVDESSDataset class."""
 
 import os
-import re
-import glob
-import struct
-import random
 import logging
 import urllib
 
@@ -28,6 +24,7 @@ import numpy as np
 import tensorflow as tf
 
 from pagi.datasets.dataset import Dataset
+from pagi.utils.data_utils import generate_filenames
 
 
 class RAVDESSDataset(Dataset):  # pylint: disable=W0223
@@ -39,30 +36,33 @@ class RAVDESSDataset(Dataset):  # pylint: disable=W0223
 
   def __init__(self, directory):
     super(RAVDESSDataset, self).__init__(
-      name='ravdess',
-      directory=directory,
-      dataset_shape=[-1, 87, 87, 3],
-      train_size=4904,
-      test_size=4904,
-      num_train_classes=10,
-      num_test_classes=10,
-      num_classes=10)
+        name='ravdess',
+        directory=directory,
+        dataset_shape=[-1, 87, 87, 3],
+        train_size=4904,
+        test_size=4904,
+        num_train_classes=10,
+        num_test_classes=10,
+        num_classes=10)
 
     self._batch_size = None
     self.num_frames = 100
 
   def get_train(self, preprocess=False, options=None):  # pylint: disable=W0221
     """tf.data.Dataset object for training data."""
+    del options
     return self._dataset('train', self._directory, 'sharded_ravdess.h5', preprocess)
 
   def get_test(self, preprocess=False, options=None):  # pylint: disable=W0221
     """tf.data.Dataset object for test data."""
+    del options
     return self._dataset('test', self._directory, 'sharded_ravdess.h5', preprocess)
 
   def set_batch_size(self, batch_size):
     self._batch_size = batch_size
 
   def _download(self, directory, filename):
+    """Download the preprocessed RAVDESS dataset from Cloud Storage."""
     url = 'https://storage.googleapis.com/project-agi/datasets/ravdess/'
 
     dirpath = os.path.join(directory, self.name)
@@ -111,14 +111,15 @@ class RAVDESSDataset(Dataset):  # pylint: disable=W0223
     return sequence
 
   def _load_dataset(self, directory, filename):
+    """Load and keep track of the RAVDESS videos."""
     self._download(directory, filename)
 
     videos = []
     identifiers = []
-    filenames = self._generate_filenames(directory, filename)
+    filenames = generate_filenames(self.name, directory, filename)
 
-    for i, filename in enumerate(filenames):
-      hf = h5py.File(filenames[i], 'r')
+    for filepath in filenames:
+      hf = h5py.File(filepath, 'r')
 
       for dataset_name in hf['data']:
         dataset = hf['data'][dataset_name]
@@ -132,6 +133,8 @@ class RAVDESSDataset(Dataset):  # pylint: disable=W0223
 
   def _dataset(self, split, directory, filename, preprocess):
     """Download and parse the dataset."""
+    del preprocess
+
     training = True
     if split == 'test':
       training = False
@@ -186,21 +189,8 @@ class RAVDESSDataset(Dataset):  # pylint: disable=W0223
 
     dataset = tf.data.Dataset.from_generator(generator, output_types=(tf.float32, tf.int32, tf.bool),
                                              output_shapes=(
-                                                tf.TensorShape([self.IMAGE_DIM, self.IMAGE_DIM, 3]),
-                                                tf.TensorShape([]),
-                                                tf.TensorShape([])))
+                                                 tf.TensorShape([self.IMAGE_DIM, self.IMAGE_DIM, 3]),
+                                                 tf.TensorShape([]),
+                                                 tf.TensorShape([])))
 
     return dataset
-
-  def _generate_filenames(self, directory, data_file):
-    dirpath = os.path.join(directory, self.name)
-    filepath = os.path.join(dirpath, data_file)
-    if not tf.gfile.Exists(dirpath):
-      raise ValueError('Directory not found.')
-
-    if data_file.startswith('sharded_'):
-      sharded_file_format = data_file + '-*'
-      tfrecords_list = glob.glob(os.path.join(dirpath, sharded_file_format))
-      return tfrecords_list
-    else:
-      return filepath

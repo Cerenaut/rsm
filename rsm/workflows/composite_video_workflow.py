@@ -1,4 +1,4 @@
-# Copyright (C) 2018 Project AGI
+# Copyright (C) 2019 Project AGI
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -13,30 +13,20 @@
 # limitations under the License.
 # ==============================================================================
 
-"""VideoWorkflow class."""
+"""CompositeVideoWorkflow class."""
 
 from __future__ import absolute_import
 from __future__ import division
 from __future__ import print_function
 
-import os
-import logging
-from PIL import Image
-
-import numpy as np
-import tensorflow as tf
-import matplotlib.pyplot as plt
-import matplotlib.animation as animation
-
-from pagi.utils import tf_utils
 from pagi.workflows.composite_workflow import CompositeWorkflow
 
 from rsm.workflows.video_workflow import VideoWorkflow
-from rsm.components.sequence_memory_stack import SequenceMemoryStack
 from rsm.components.sequence_memory_layer import SequenceMemoryLayer
 from rsm.components.composite_rsm_stack import CompositeRSMStack
 
 class CompositeVideoWorkflow(CompositeWorkflow, VideoWorkflow):
+  """A composite variant of the video workflow."""
 
   def _init_test_decodes(self):
     if CompositeRSMStack.ae_name in self._component.get_sub_components().keys():
@@ -64,7 +54,7 @@ class CompositeVideoWorkflow(CompositeWorkflow, VideoWorkflow):
                     rsm_output, feed_dict)
 
   def set_previous_frame(self, previous):
-    self._component.get_sub_component('output').get_layer(0)._dual.set_values('previous', previous)
+    self._component.get_sub_component('output').get_layer(0).get_dual().set_values('previous', previous)
 
   def get_decoded_frame(self):
     return self._component.get_sub_component('output').get_layer(0).get_values(SequenceMemoryLayer.decoding)

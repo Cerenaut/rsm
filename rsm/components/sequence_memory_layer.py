@@ -1,4 +1,4 @@
-# Copyright (C) 2018 Project AGI
+# Copyright (C) 2019 Project AGI
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -19,12 +19,7 @@ from __future__ import absolute_import
 from __future__ import division
 from __future__ import print_function
 
-import sys
 import logging
-import math
-
-import os
-from os.path import dirname, abspath
 
 import numpy as np
 import tensorflow as tf
@@ -33,13 +28,9 @@ from pagi.components.summary_component import SummaryComponent
 from pagi.components.conv_autoencoder_component import ConvAutoencoderComponent
 
 from pagi.utils import image_utils
-from pagi.utils.dual import DualData
-from pagi.utils.layer_utils import type_activation_fn
 from pagi.utils.layer_utils import activation_fn
 from pagi.utils.tf_utils import tf_build_stats_summaries
 from pagi.utils.tf_utils import tf_build_top_k_mask_4d_op
-from pagi.utils.tf_utils import tf_build_varying_top_k_mask_4d_op
-from pagi.utils.tf_utils import tf_build_perplexity
 from pagi.utils.tf_utils import tf_create_optimizer
 from pagi.utils.tf_utils import tf_do_training
 from pagi.utils.tf_utils import tf_random_mask
@@ -64,7 +55,7 @@ class SequenceMemoryLayer(SummaryComponent):
         momentum_nesterov=False,
 
         # General options
-        training_interval=[0,-1],  # [0,-1] means forever
+        training_interval=[0, -1],  # [0,-1] means forever
         autoencode=False,
         hidden_nonlinearity='tanh', # used for hidden layer only
         inhibition_decay=0.1,  # controls refractory period
@@ -98,8 +89,8 @@ class SequenceMemoryLayer(SummaryComponent):
         lifetime_sparsity_cols=False,
 
         # Bias (shouldn't need to change)
-        i_scale = 1.0,
-        i_bias = 0.0,
+        i_scale=1.0,
+        i_bias=0.0,
         ff_bias=False,
         fb_bias=False,
         decode_bias=True,
@@ -116,9 +107,6 @@ class SequenceMemoryLayer(SummaryComponent):
         summarize_weights=False,
         summarize_freq=False
     )
-
-  def __init__(self):
-    super().__init__()
 
   # Static names
   loss = 'loss'
@@ -168,38 +156,39 @@ class SequenceMemoryLayer(SummaryComponent):
     if ((self._freq_update_count % self._hparams.freq_update_interval) == 0) and (self._freq_update_count > 0):
       self._freq_update_count = 0
 
-      #self._update_freq_with_usage(self.usage, self.freq)
       self._update_freq_with_usage(self.usage_cell, self.freq_cell)
       self._update_freq_with_usage(self.usage_col, self.freq_col)
 
     self._freq_update_count += 1
 
   def _update_freq_with_usage(self, usage_key, freq_key):
+    """Update frequency from usage count."""
 
-      # Calculate frequency from usage count
-      # ---------------------------------------------------------------------
-      conv_h = self._encoding_shape[1]
-      conv_w = self._encoding_shape[2]
-      conv_area = conv_w * conv_h
-      freq_norm = 1.0 / float(self._hparams.freq_update_interval * self._hparams.batch_size * conv_area)
+    # Calculate frequency from usage count
+    # ---------------------------------------------------------------------
+    conv_h = self._encoding_shape[1]
+    conv_w = self._encoding_shape[2]
+    conv_area = conv_w * conv_h
+    freq_norm = 1.0 / float(self._hparams.freq_update_interval * self._hparams.batch_size * conv_area)
 
-      usage = self._dual.get_values(usage_key)
-      freq_old = self._dual.get_values(freq_key)
-      freq = np.multiply(usage, freq_norm) # Convert to observed frequency
-      self._dual.set_values_to(usage_key, 0.0) # Reset usage
+    usage = self._dual.get_values(usage_key)
+    freq_old = self._dual.get_values(freq_key)
+    freq = np.multiply(usage, freq_norm) # Convert to observed frequency
+    self._dual.set_values_to(usage_key, 0.0) # Reset usage
 
-      # Linear interpolation
-      # ---------------------------------------------------------------------
-      a = self._hparams.freq_learning_rate
-      b = 1.0 - a
+    # Linear interpolation
+    # ---------------------------------------------------------------------
+    a = self._hparams.freq_learning_rate
+    b = 1.0 - a
 
-      Fa = np.multiply(a, freq)
-      fb = np.multiply(b, freq_old)
+    fa = np.multiply(a, freq)
+    fb = np.multiply(b, freq_old)
 
-      freq_new = np.add(Fa, fb) # now the frequency has been updated
-      self._dual.set_values(freq_key, freq_new)
+    freq_new = np.add(fa, fb) # now the frequency has been updated
+    self._dual.set_values(freq_key, freq_new)
 
   def _update_lifetime_mask(self):
+    """Update the lifetime mask."""
     if self._freq_update_count != 1:
       return
 
@@ -216,7 +205,7 @@ class SequenceMemoryLayer(SummaryComponent):
       lifetime_mask_values[d] = mask_value
     lifetime_mask.set_values(lifetime_mask_values)
 
-  def update_recurrent(self): 
+  def update_recurrent(self):
     """If feedback is only the recurrent state, then simply copy it into place."""
     if self._hparams.autoencode is True:
       return  # No feedback
@@ -260,7 +249,7 @@ class SequenceMemoryLayer(SummaryComponent):
 
   def update_history(self, session, history_mask, clear_previous=True):
     """Clear recurrent history given a mask of all samples in the batch.
-    It's as if a new episode or sequence has started so we don't want to learn the transition 
+    It's as if a new episode or sequence has started so we don't want to learn the transition
     from the previous one. Inputs recurrent and feedback are conditionally cleared, it's assumed
     their values are already up to date and otherwise ready for next batch."""
 
@@ -286,15 +275,15 @@ class SequenceMemoryLayer(SummaryComponent):
     history_pl = history.get_pl()
 
     feed_dict = {
-      inhibition_pl: inhibition_values,
-      previous_pl: previous_values,
-      recurrent_pl: recurrent_values,
-      history_pl: history_mask
+        inhibition_pl: inhibition_values,
+        previous_pl: previous_values,
+        recurrent_pl: recurrent_values,
+        history_pl: history_mask
     }
 
     fetches = {
-      self.inhibition_mask: self._dual.get_op(self.inhibition_mask),
-      self.recurrent_mask: self._dual.get_op(self.recurrent_mask)
+        self.inhibition_mask: self._dual.get_op(self.inhibition_mask),
+        self.recurrent_mask: self._dual.get_op(self.recurrent_mask)
     }
 
     if self.use_feedback():
@@ -302,7 +291,7 @@ class SequenceMemoryLayer(SummaryComponent):
       feedback_values = feedback.get_values()  # 4d: b, h?, w?, d?
       feedback_pl = feedback.get_pl()  # 4d
       feed_dict.update({
-        feedback_pl: feedback_values
+          feedback_pl: feedback_values
       })
       fetches[self.feedback_mask] = self._dual.get_op(self.feedback_mask)
 
@@ -333,13 +322,14 @@ class SequenceMemoryLayer(SummaryComponent):
     num_cells = self._hparams.cols * self._hparams.cells_per_col
     return num_cells
 
+  @staticmethod
   def get_encoding_shape_4d(input_shape, hparams):
     return ConvAutoencoderComponent.get_convolved_shape(input_shape,
-                                                   hparams.filters_field_height,
-                                                   hparams.filters_field_width,
-                                                   hparams.filters_field_stride,
-                                                   hparams.cols * hparams.cells_per_col,
-                                                   padding='SAME')
+                                                        hparams.filters_field_height,
+                                                        hparams.filters_field_width,
+                                                        hparams.filters_field_stride,
+                                                        hparams.cols * hparams.cells_per_col,
+                                                        padding='SAME')
 
   def build(self, input_values, input_shape, hparams, name='rsm', encoding_shape=None, feedback_shape=None):  # pylint: disable=W0221
     """Initializes the model parameters.
@@ -359,8 +349,6 @@ class SequenceMemoryLayer(SummaryComponent):
     self._freq_update_count = 0
     self._training_batch_count = 0
 
-    #self._get_feedback_weights_op = None
-
     self._input_shape = input_shape
     self._input_values = input_values
 
@@ -371,14 +359,14 @@ class SequenceMemoryLayer(SummaryComponent):
     self._feedback_shape = feedback_shape
 
     logging.info('~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~')
-    logging.info('Layer "' + self.name + '"')
-    logging.info('# Cols ' + str(self._hparams.cols))
-    logging.info('# Cells/Col ' + str(self._hparams.cells_per_col))
-    logging.info('# Total cells ' + str(self._hparams.cols * self._hparams.cells_per_col))
-    logging.info('Input shape: ' + str(self._input_shape))
-    logging.info('Encoding shape: ' + str(self._encoding_shape))
+    logging.info('Layer: %s', self.name)
+    logging.info('# Cols: %s', str(self._hparams.cols))
+    logging.info('# Cells/Col: %s', str(self._hparams.cells_per_col))
+    logging.info('# Total cells: %s', str(self._hparams.cols * self._hparams.cells_per_col))
+    logging.info('Input shape: %s', str(self._input_shape))
+    logging.info('Encoding shape: %s', str(self._encoding_shape))
     if self.use_feedback():
-      logging.info('Feedback shape: ' + str(self._feedback_shape))
+      logging.info('Feedback shape: %s', str(self._feedback_shape))
     else:
       logging.info('Feedback shape: N/A')
     logging.info('~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~')
@@ -389,27 +377,18 @@ class SequenceMemoryLayer(SummaryComponent):
 
     self.reset()
 
-    #self.build_summaries()
-
   def _build_history_update(self):
     """Builds graph ops to update the history tensors given a history mask"""
 
-    # previous_input_shape = self._input_values.get_shape().as_list()
-    # feedback_input_shape = self._create_encoding_shape_4d(previous_input_shape)
-    # dend_6d_shape = [feedback_input_shape[0], feedback_input_shape[1], feedback_input_shape[2], self._hparams.cols, self._hparams.cells_per_col, self._hparams.dends_per_cell]
-    #print( "batch size = ", self._hparams.batch_size)
     history_pl = self._dual.add(self.history, shape=[self._hparams.batch_size], default_value=1.0).add_pl()
-    #print( "hist pl = ", history_pl)
     history_4d = tf.reshape(history_pl, [self._hparams.batch_size, 1, 1, 1])
     history_5d = tf.reshape(history_pl, [self._hparams.batch_size, 1, 1, 1, 1])
-    #history_6d = tf.reshape(history_pl, [self._hparams.batch_size, 1, 1, 1, 1, 1])
 
     previous_pl = self._dual.get_pl(self.previous)
     inhibition_pl = self._dual.get_pl(self.inhibition)
     recurrent_pl = self._dual.get_pl(self.recurrent)
 
     previous_masked = tf.multiply(previous_pl, history_4d)
-    #inhibition_masked = tf.multiply(inhibition_pl, history_6d)
     inhibition_masked = tf.multiply(inhibition_pl, history_5d)
     recurrent_masked = tf.multiply(recurrent_pl, history_4d)
 
@@ -425,20 +404,22 @@ class SequenceMemoryLayer(SummaryComponent):
   def _build_decay_and_integrate(self, feedback_old, feedback_now):
     """Builds graph ops to update feedback structures"""
     if self._hparams.feedback_decay_rate == 0.0:
-      #self.set_feedback_values(output)
       return feedback_now
 
     # Integrate feedback over time, exponentially weighted decay.
     # Do this both for train and test.
+
     # Additive
-    #feedback_new = (feedback_old * self._hparams.feedback_decay_rate) + feedback_now
+    # feedback_new = (feedback_old * self._hparams.feedback_decay_rate) + feedback_now
+
     # Maximum
     feedback_new = tf.maximum(feedback_old * self._hparams.feedback_decay_rate, feedback_now)
+
     return feedback_new
 
   def _build_sum_norm(self, input_4d, do_norm, eps=0.00000000001):
     # Optionally apply a norm to make input constant sum
-    # NOTE: Assuming here it is CORRECT to norm over conv w,h 
+    # NOTE: Assuming here it is CORRECT to norm over conv w,h
     if do_norm is True:
       sum_input = tf.reduce_sum(input_4d, axis=[1, 2, 3], keepdims=True) + eps
       unit_input_4d = tf.divide(input_4d, sum_input)
@@ -447,16 +428,12 @@ class SequenceMemoryLayer(SummaryComponent):
     return unit_input_4d
 
   def _build_fb_conditioning(self, feedback_input_4d):
+    """Build feedback conditioning."""
 
     # Optionally apply a norm to make input constant sum
     unit_feedback = self._build_sum_norm(feedback_input_4d, self._hparams.feedback_norm)
-    # if self._hparams.feedback_norm is True:
-    #   sum_feedback_values = tf.reduce_sum(feedback_input_4d, axis=[1, 2, 3], keepdims=True) + eps
-    #   unit_feedback_values = tf.divide(feedback_input_4d, sum_feedback_values)
-    # else:
-    #   unit_feedback_values = feedback_input_4d
 
-    # Dropout AFTER norm. There will be a scaling factor inside dropout 
+    # Dropout AFTER norm. There will be a scaling factor inside dropout
     if self._hparams.feedback_keep_rate < 1.0:
       feedback_keep_pl = self._dual.add(self.feedback_keep, shape=(), default_value=1.0).add_pl(default=True)
       unit_feedback_dropout = tf.nn.dropout(unit_feedback, feedback_keep_pl)  # Note, a scaling is applied
@@ -467,24 +444,19 @@ class SequenceMemoryLayer(SummaryComponent):
     return unit_feedback, unit_feedback_dropout
 
   def _build_ff_conditioning(self, f_input):
-    # if self._hparams.autoencode is True:
-    #   ff_input = self._input_values
-    # else:
-    #   previous_pl = self._dual.get_pl(self.previous)
-    #   ff_input = previous_pl # ff_input = x_ff(t-1)
+    """Build feedforward conditioning."""
 
-    # TODO could add ff dropout here.
+    # TODO: could add ff dropout here.
 
-    # TODO What norm should we do for stacked layers? Is zero special?
+    # TODO: What norm should we do for stacked layers? Is zero special?
     # Perhaps I should batch-norm.
 
     # Adjust range - e.g. if range is 0 <= x <= 3, then
-    # 
     if self._hparams.i_scale != 1.0:
       f_input = f_input * self._hparams.i_scale
 
     if self._hparams.i_bias != 0.0:
-       f_input = f_input + self._hparams.i_bias
+      f_input = f_input + self._hparams.i_bias
 
     return f_input
 
@@ -495,18 +467,18 @@ class SequenceMemoryLayer(SummaryComponent):
 
     if self.use_freq():
       self._dual.add(self.freq_col, shape=[self._hparams.cols], default_value=0.0).add_pl()
-      self._dual.add(self.freq_cell, shape=[self._hparams.cols * self._hparams.cells_per_col], default_value=0.0).add_pl()
-      #self._dual.add(self.freq, shape=[num_dendrites], default_value=0.0).add_pl()
-      #self._dual.add(self.usage, shape=[num_dendrites], default_value=0.0).add_pl()
-      self._dual.add(self.usage_cell, shape=[self._hparams.cols * self._hparams.cells_per_col], default_value=0.0).add_pl()
+      self._dual.add(self.freq_cell, shape=[self._hparams.cols * self._hparams.cells_per_col],
+                     default_value=0.0).add_pl()
+      self._dual.add(self.usage_cell, shape=[self._hparams.cols * self._hparams.cells_per_col],
+                     default_value=0.0).add_pl()
       self._dual.add(self.usage_col, shape=[self._hparams.cols], default_value=0.0).add_pl()
 
     self._dual.add(self.lifetime_mask, shape=[num_dendrites], default_value=1.0).add_pl(dtype=tf.bool)
 
     # ff input update - we work with the PREVIOUS ff input. This code stores the current input for access next time.
     input_shape_list = self._input_values.get_shape().as_list()
-    previous_pl = self._dual.add(self.previous,shape=input_shape_list, default_value=0.0).add_pl()
-    previous_op = self._dual.set_op(self.previous, self._input_values)
+    previous_pl = self._dual.add(self.previous, shape=input_shape_list, default_value=0.0).add_pl()
+    self._dual.set_op(self.previous, self._input_values)
 
     # FF input
     ff_target = self._input_values
@@ -528,7 +500,7 @@ class SequenceMemoryLayer(SummaryComponent):
       r_unit_dropout = unit_recurrent_dropout
 
       # Inhibition (used later, but same shape)
-      inhibition_pl = self._dual.add(self.inhibition, shape=dend_5d_shape, default_value=0.0).add_pl()
+      self._dual.add(self.inhibition, shape=dend_5d_shape, default_value=0.0).add_pl()
 
       # FB input
       b_unit_dropout = None
@@ -540,7 +512,7 @@ class SequenceMemoryLayer(SummaryComponent):
         # Interpolate the feedback to the conv w,h of the current layer
         interpolated_size = [recurrent_input_shape[1], recurrent_input_shape[2]]  # note h,w order
         feedback_interpolated = tf.image.resize_bilinear(feedback_pl, interpolated_size)
-        unit_feedback, unit_feedback_dropout = self._build_fb_conditioning(feedback_interpolated)
+        _, unit_feedback_dropout = self._build_fb_conditioning(feedback_interpolated)
         b_unit_dropout = unit_feedback_dropout
 
       # Encoding of dendrites (weighted sums)
@@ -597,7 +569,7 @@ class SequenceMemoryLayer(SummaryComponent):
 
       # Debug the per-sample prediction error inherent to the memory.
       prediction_error = tf.abs(ff_target - decoding)
-      sum_abs_error = tf.reduce_sum(prediction_error, axis=[1,2,3])
+      sum_abs_error = tf.reduce_sum(prediction_error, axis=[1, 2, 3])
       self._dual.set_op(self.sum_abs_error, sum_abs_error)
 
     # Managing history
@@ -615,7 +587,7 @@ class SequenceMemoryLayer(SummaryComponent):
       self._dual.set_op(self.encoding_f, f_encoding_cells_5d)
 
     num_cells = self.get_num_cells()
-    shape_cells_5d = f_encoding_cells_5d.get_shape().as_list()    
+    shape_cells_5d = f_encoding_cells_5d.get_shape().as_list()
     shape_cells_4d = [shape_cells_5d[0], shape_cells_5d[1], shape_cells_5d[2], num_cells]
 
     # Recurrent
@@ -637,19 +609,10 @@ class SequenceMemoryLayer(SummaryComponent):
 
     return f_encoding_cells_5d, r_encoding_cells_5d, b_encoding_cells_5d
 
-  def _build_conv_encoding(self, 
-                           input_shape, 
-                           input_tensor, 
-                           field_stride,
-                           field_height,
-                           field_width,
-                           output_depth,
-                           add_bias,
-                           initial_sd,
-                           scope):
+  def _build_conv_encoding(self, input_shape, input_tensor, field_stride, field_height, field_width, output_depth,
+                           add_bias, initial_sd, scope):
     """Build encoding ops for the forward path."""
     input_depth = input_shape[3]
-    #strides = [1, field_stride, field_stride, input_depth]
     strides = [1, field_stride, field_stride, 1]
     conv_variable_shape = [
         field_height,
@@ -657,12 +620,6 @@ class SequenceMemoryLayer(SummaryComponent):
         input_depth,
         output_depth  # number of filters
     ]
-
-    # print('input tensor: ', input_tensor)
-    # print('input_shape: ', input_shape)
-    # print('conv_variable_shape: ', conv_variable_shape)
-    # print('strides: ', strides)
-    # print('output_depth: ', output_depth)
 
     with tf.variable_scope(scope, reuse=tf.AUTO_REUSE, auxiliary_name_scope=False):
 
@@ -679,30 +636,18 @@ class SequenceMemoryLayer(SummaryComponent):
 
       return convolved, weights, bias
 
-  # def _build_feedback_encoding(self, input_shape, input_tensor, filters):
-  #   """Build encoding ops for feedback path."""
-  #   input_area = np.prod(input_shape[1:])
-  #   batch_input_shape = (-1, input_area)
-  #   input_vector = tf.reshape(input_tensor, batch_input_shape)
-  #   weighted_sum = tf.layers.dense(inputs=input_vector, units=filters, activation=None, use_bias=self._hparams.fb_bias, name='feedback')
-  #   return weighted_sum
-
-  # def _build_get_feedback_weights_op(self):
-  #   if self._get_feedback_weights_op is None:
-  #     with tf.variable_scope('feedback', reuse=True):
-  #       self._get_feedback_weights_op = tf.get_variable('kernel')
-  #       logging.debug('weights: %s', self._get_feedback_weights_op)  # shape=(784, 1024) = input, cells
-
   def _build_forward_encoding(self, input_shape, input_tensor):
     """Build encoding ops for the forward path."""
     output_depth = self._hparams.cols
     field_stride = self._hparams.filters_field_stride
     field_height = self._hparams.filters_field_height
-    field_width  = self._hparams.filters_field_width
+    field_width = self._hparams.filters_field_width
     add_bias = self._hparams.ff_bias
     initial_sd = self._hparams.f_sd  #0.03
     scope = 'forward'
-    convolved, self._weights_f, self._bias_f = self._build_conv_encoding(input_shape, input_tensor, field_stride, field_height, field_width, output_depth, add_bias, initial_sd, scope)
+    convolved, self._weights_f, self._bias_f = self._build_conv_encoding(input_shape, input_tensor, field_stride,
+                                                                         field_height, field_width, output_depth,
+                                                                         add_bias, initial_sd, scope)
     return convolved
 
   def _build_recurrent_encoding(self, input_shape, input_tensor):
@@ -710,11 +655,13 @@ class SequenceMemoryLayer(SummaryComponent):
     output_depth = self._hparams.cols * self._hparams.cells_per_col
     field_stride = 1  # i.e. feed to itself
     field_height = 1  # i.e. same position
-    field_width  = 1  # i.e. same position
+    field_width = 1  # i.e. same position
     add_bias = self._hparams.fb_bias
     initial_sd = self._hparams.r_sd  # Not previously defined
     scope = 'recurrent'
-    convolved, self._weights_r, self._bias_r = self._build_conv_encoding(input_shape, input_tensor, field_stride, field_height, field_width, output_depth, add_bias, initial_sd, scope)
+    convolved, self._weights_r, self._bias_r = self._build_conv_encoding(input_shape, input_tensor, field_stride,
+                                                                         field_height, field_width, output_depth,
+                                                                         add_bias, initial_sd, scope)
     return convolved
 
   def _build_feedback_encoding(self, input_shape, input_tensor):
@@ -722,14 +669,18 @@ class SequenceMemoryLayer(SummaryComponent):
     output_depth = self._hparams.cols * self._hparams.cells_per_col
     field_stride = 1  # i.e. feed to itself
     field_height = 1  # i.e. same position
-    field_width  = 1  # i.e. same position
+    field_width = 1  # i.e. same position
     add_bias = self._hparams.fb_bias
     initial_sd = self._hparams.b_sd  # Not previously defined
     scope = 'feedback'
-    convolved, self._weights_r, self._bias_r = self._build_conv_encoding(input_shape, input_tensor, field_stride, field_height, field_width, output_depth, add_bias, initial_sd, scope)
+    convolved, self._weights_r, self._bias_r = self._build_conv_encoding(input_shape, input_tensor, field_stride,
+                                                                         field_height, field_width, output_depth,
+                                                                         add_bias, initial_sd, scope)
     return convolved
 
   def _build_cols_mask(self, h, w, ranking_input_cols_4d):
+    """Build columns mask."""
+
     # ---------------------------------------------------------------------------------------------------------------
     # TOP-k RANKING
     # ---------------------------------------------------------------------------------------------------------------
@@ -741,40 +692,35 @@ class SequenceMemoryLayer(SummaryComponent):
     # ---------------------------------------------------------------------------------------------------------------
     # TOP-1 over cells - lifetime sparsity [in winning Cols only.]
     # ---------------------------------------------------------------------------------------------------------------
-    # At each batch, h, w, and col, find the top-1 cell. 
-    # Don't reduce over cells - dendrite is only valid for its associated cell. 
-    top_1_input_cols_4d = tf.reduce_max(ranking_input_cols_4d, axis=[0,1,2], keepdims=True)
+    # At each batch, h, w, and col, find the top-1 cell.
+    # Don't reduce over cells - dendrite is only valid for its associated cell.
+    top_1_input_cols_4d = tf.reduce_max(ranking_input_cols_4d, axis=[0, 1, 2], keepdims=True)
     top_1_mask_bool_cols_4d = tf.greater_equal(ranking_input_cols_4d, top_1_input_cols_4d)
     top_1_mask_cols_4d = tf.to_float(top_1_mask_bool_cols_4d)
 
     # ---------------------------------------------------------------------------------------------------------------
     # Exclude naturally winning cols from the lifetime sparsity mask.
     # ---------------------------------------------------------------------------------------------------------------
-    top_k_inv_cols_4d = 1.0 - tf.reduce_max(top_k_mask_cols_4d, axis=[0,1,2], keepdims=True)
+    top_k_inv_cols_4d = 1.0 - tf.reduce_max(top_k_mask_cols_4d, axis=[0, 1, 2], keepdims=True)
     top_1_mask_cols_4d = tf.multiply(top_1_mask_cols_4d, top_k_inv_cols_4d) # removes lifetime bits from winning cols
 
     # ---------------------------------------------------------------------------------------------------------------
     # Combine the two masks - lifetime sparse, and top-k-excluding-threshold
     # ---------------------------------------------------------------------------------------------------------------
-    #either_mask_cols_4d = tf.logical_or(top_k_mask_cols_4d, top_1_mask_cols_4d)
     if self._hparams.lifetime_sparsity_cols:
       either_mask_cols_4d = tf.maximum(top_k_mask_cols_4d, top_1_mask_cols_4d)
     else:
       either_mask_cols_4d = top_k_mask_cols_4d
 
     either_mask_cols_5d = self._build_cols_4d_to_cells_5d(either_mask_cols_4d)
-    # either_mask_cols_5d = tf.tile(tf.expand_dims(either_mask_cols_4d, -1),
-    #                        [1, 1, 1, 1, self._hparams.cells_per_col])
-    # either_mask_cols_6d = tf.tile(tf.expand_dims(either_mask_cols_5d, -1), # Expand to 6d
-    #                        [1, 1, 1, 1, 1, self._hparams.dends_per_cell])
 
     return either_mask_cols_5d
 
   def _build_tiebreaker_masks(self, h, w):
+    """Build tiebreaker masks."""
 
     # Deal with the special case that there's no feedback and all the cells and dends are equal
     # Build a special mask to select ONLY the 1st cell/dend in each col, in the event that all the inputs are identical
-    #shape_dend_6d = [self._hparams.batch_size, h, w, self._hparams.cols, self._hparams.cells_per_col, self._hparams.dends_per_cell]
     shape_cells_5d = [self._hparams.batch_size, h, w, self._hparams.cols, self._hparams.cells_per_col]
 
     np_cells_5d_1st = np.zeros(shape_cells_5d) # 1 for first cell / dendrite in the col
@@ -784,19 +730,17 @@ class SequenceMemoryLayer(SummaryComponent):
       for y in range(shape_cells_5d[1]):
         for x in range(shape_cells_5d[2]):
           for col in range(shape_cells_5d[3]):
-            #for cell in range(shape_dend_6d[4]):
-            #  for dend in range(shape_dend_6d[5]):
-            #np_dend_6d_1st[b][y][x][col][0][0] = 1 # 1st cell+dend
             np_cells_5d_1st[b][y][x][col][0] = 1 # 1st cell+dend
 
     self._mask_1st_cells_5d = tf.constant(np_cells_5d_1st, dtype=tf.float32)
     self._mask_all_cells_5d = tf.constant(np_cells_5d_all, dtype=tf.float32)
 
-  def _build_dendrite_mask(self, h, w, ranking_input_cells_5d, mask_cols_5d, lifetime_sparsity_dends, lifetime_mask_dend_1d):
+  def _build_dendrite_mask(self, h, w, ranking_input_cells_5d, mask_cols_5d, lifetime_sparsity_dends,
+                           lifetime_mask_dend_1d):
+    """Build dendrite mask."""
+    del h, w
 
     # Find the max value in each col, by reducing over cells and dends
-    # max_col_6d = tf.reduce_max(ranking_input_dend_6d, axis=[4, 5], keepdims=True) # 1 if bit is best in the col
-    # min_col_6d = tf.reduce_min(ranking_input_dend_6d, axis=[4, 5], keepdims=True)
     max_cells_5d = tf.reduce_max(ranking_input_cells_5d, axis=[4], keepdims=True) # 1 if bit is best in the col
     min_cells_5d = tf.reduce_min(ranking_input_cells_5d, axis=[4], keepdims=True)
     rng_cells_5d = max_cells_5d - min_cells_5d
@@ -809,7 +753,6 @@ class SequenceMemoryLayer(SummaryComponent):
 
     # Below: Calculate the best dendrite of all the dendrites on all the cells for this Col.
     # i.e. the "winner" Dend of the Col
-    #top1_dend_6d = tf.reduce_max(ranking_input_dend_6d, axis=[4, 5], keepdims=True) # max value per CELL, of ONLY the samples to which this is the batch-max for the COL.
     best_cells_5d_bool = tf.greater_equal(ranking_input_cells_5d, max_cells_5d)
 
     # Exclude cells from cols that weren't selected
@@ -817,14 +760,12 @@ class SequenceMemoryLayer(SummaryComponent):
 
     # Lifetime sparsity
     if lifetime_sparsity_dends:
-      top_1_max_cells_5d = tf.reduce_max(masked_ranking_input_dend_6d, axis=[0,1,2], keepdims=True)
+      top_1_max_cells_5d = tf.reduce_max(masked_ranking_input_dend_6d, axis=[0, 1, 2], keepdims=True)
       top_1_cells_5d_bool = tf.greater_equal(masked_ranking_input_cells_5d, top_1_max_cells_5d)
 
       # exclude dends with actual uses from lifetime training
-      #shape_dend_6d_111 = [1, 1, 1, self._hparams.cols, self._hparams.cells_per_col, self._hparams.dends_per_cell]
       shape_cells_5d_111 = [1, 1, 1, self._hparams.cols, self._hparams.cells_per_col]
 
-      #lifetime_mask_cells_5d = tf.reshape(lifetime_mask_dend_1d, shape=shape_dend_6d_111)
       lifetime_mask_cells_5d = tf.reshape(lifetime_mask_dend_1d, shape=shape_cells_5d_111)
       top_1_cells_5d_bool = tf.logical_and(top_1_cells_5d_bool, lifetime_mask_cells_5d)
 
@@ -833,16 +774,12 @@ class SequenceMemoryLayer(SummaryComponent):
       top1_best_cells_5d_bool = best_cells_5d_bool
 
     # Now combine this mask with the Top-k cols mask, giving a combined mask:
-    mask_cols_5d_bool = tf.greater(mask_cols_5d, 0.0) # Convert to bool 
-    #mask_dend_6d_bool = tf.logical_and(best_dend_6d_bool, mask_cols_6d_bool)
+    mask_cols_5d_bool = tf.greater(mask_cols_5d, 0.0) # Convert to bool
     mask_cells_5d_bool = tf.logical_and(top1_best_cells_5d_bool, mask_cols_5d_bool)
     mask_cells_5d = tf.to_float(mask_cells_5d_bool)
 
-    edge_cells_5d_bool = mask_cells_5d * if0_mask_cells_5d_bool 
+    edge_cells_5d_bool = mask_cells_5d * if0_mask_cells_5d_bool
 
-    #mask_dend_6d = top_1_mask_dend_6d
-    #mask_dend_6d = tf.maximum(top_1_mask_dend_6d, 0.0)
-    #mask_dend_6d = tf.maximum(top_1_mask_dend_6d, batch_max_mask_dend_6d)
     return edge_cells_5d_bool
 
   def _build_cols_4d_to_cells_5d(self, cols_4d):
@@ -852,30 +789,17 @@ class SequenceMemoryLayer(SummaryComponent):
 
   def _build_cells_4d_to_cells_5d(self, cells_4d):
     cells_4d_shape = cells_4d.get_shape().as_list()
-    cells_5d_shape = [cells_4d_shape[0], cells_4d_shape[1], cells_4d_shape[2], self._hparams.cols, self._hparams.cells_per_col]
+    cells_5d_shape = [cells_4d_shape[0], cells_4d_shape[1], cells_4d_shape[2], self._hparams.cols,
+                      self._hparams.cells_per_col]
     cells_5d = tf.reshape(cells_4d, cells_5d_shape)
     return cells_5d
 
   def _build_filtering(self, f_encoding_cells_5d, r_encoding_cells_5d, b_encoding_cells_5d):
     """Build filtering/masking for specified encoding."""
-    #hidden_size = self._hparams.cols
+
     shape_cells_5d = f_encoding_cells_5d.get_shape().as_list()
     h = shape_cells_5d[1]
     w = shape_cells_5d[2]
-    #shape_dend_6d = [self._hparams.batch_size, h, w, self._hparams.cols, self._hparams.cells_per_col, self._hparams.dends_per_cell]
-    #shape_cells_5d = [self._hparams.batch_size, h, w, self._hparams.cols, self._hparams.cells_per_col]
-
-
-    # ---------------------------------------------------------------------------------------------------------------
-    # Expand FF to 6d to work out per-dendrite weighted sums
-    # Then mask in dend 6d space, and reduce back for cols values.
-    # ---------------------------------------------------------------------------------------------------------------
-    #f_encoding_cols_5d = self._build_cols_4d_to_cells_5d(f_encoding_cols_4d)
-    # tf.tile(tf.expand_dims(f_encoding_cols_4d, -1), # Expand to 5d
-    #                        [1, 1, 1, 1, self._hparams.cells_per_col])
-    # f_encoding_cols_6d = tf.tile(tf.expand_dims(f_encoding_cols_5d, -1), # Expand to 6d
-    #                        [1, 1, 1, 1, 1, self._hparams.dends_per_cell])
-
 
     # ---------------------------------------------------------------------------------------------------------------
     # INHIBITION - retard the activation of dendrites that fired recently.
@@ -893,9 +817,9 @@ class SequenceMemoryLayer(SummaryComponent):
 
     # Pos encoding (only used for ranking)
     # Find min in each batch sample
-    # This is wrong for conv.? Should be min in each conv location. 
+    # This is wrong for conv.? Should be min in each conv location.
     # But - it doesn't matter?
-    min_i_encoding_cells_5d = tf.reduce_min(i_encoding_cells_5d, axis=[1,2,3,4], keepdims=True) # may be negative
+    min_i_encoding_cells_5d = tf.reduce_min(i_encoding_cells_5d, axis=[1, 2, 3, 4], keepdims=True) # may be negative
     pos_i_encoding_cells_5d = (i_encoding_cells_5d - min_i_encoding_cells_5d) + 1.0 # shift to +ve range, ensure min value is nonzero
 
     # Apply inhibition/refraction
@@ -909,7 +833,6 @@ class SequenceMemoryLayer(SummaryComponent):
     # ---------------------------------------------------------------------------------------------------------------
     # TOP-k RANKING (Cols)
     # ---------------------------------------------------------------------------------------------------------------
-    #either_mask_cols_6d = self._build_cols_mask(h, w, refracted_cols_4d)
     mask_cols_5d = self._build_cols_mask(h, w, ranking_input_cols_4d)
 
     # ---------------------------------------------------------------------------------------------------------------
@@ -920,12 +843,14 @@ class SequenceMemoryLayer(SummaryComponent):
     lifetime_mask_dend_1d = self._dual.get_pl(self.lifetime_mask)
     training_lifetime_sparsity_dends = self._hparams.lifetime_sparsity_dends
     testing_lifetime_sparsity_dends = False
-    training_mask_cells_5d = self._build_dendrite_mask(h, w, ranking_input_cells_5d, mask_cols_5d, training_lifetime_sparsity_dends, lifetime_mask_dend_1d)
-    testing_mask_cells_5d = self._build_dendrite_mask(h, w, ranking_input_cells_5d, mask_cols_5d, testing_lifetime_sparsity_dends, lifetime_mask_dend_1d)
+    training_mask_cells_5d = self._build_dendrite_mask(h, w, ranking_input_cells_5d, mask_cols_5d,
+                                                       training_lifetime_sparsity_dends, lifetime_mask_dend_1d)
+    testing_mask_cells_5d = self._build_dendrite_mask(h, w, ranking_input_cells_5d, mask_cols_5d,
+                                                      testing_lifetime_sparsity_dends, lifetime_mask_dend_1d)
 
     # Update cells' inhibition
     inhibition_cells_5d = inhibition_cells_5d_pl * self._hparams.inhibition_decay # decay old inh
-    inhibition_cells_5d = tf.maximum(training_mask_cells_5d, inhibition_cells_5d) #this should be per batch sample not only per dend
+    inhibition_cells_5d = tf.maximum(training_mask_cells_5d, inhibition_cells_5d)  # this should be per batch sample not only per dend
     self._dual.set_op(self.inhibition, inhibition_cells_5d)
 
     # Update usage (test mask doesnt include lifetime bits)
@@ -933,31 +858,27 @@ class SequenceMemoryLayer(SummaryComponent):
       self._build_update_usage(testing_mask_cells_5d)
 
     # Produce the final filtering with these masks
-    training_filtered_cells_5d, testing_filtered_cells_5d = self._build_nonlinearities(f_encoding_cells_5d, r_encoding_cells_5d, b_encoding_cells_5d, training_mask_cells_5d)
+    training_filtered_cells_5d, testing_filtered_cells_5d = self._build_nonlinearities(
+        f_encoding_cells_5d, r_encoding_cells_5d, b_encoding_cells_5d, training_mask_cells_5d)
 
     return training_filtered_cells_5d, testing_filtered_cells_5d
 
   def _build_update_usage(self, mask_cells_5d):
+    """Build graph op to update usage."""
 
     # ---------------------------------------------------------------------------------------------------------------
-    # USAGE UPDATE - per dendrite
+    # USAGE UPDATE - per cell
     # Reduce over the batch, w, and h.
     # Note that any training samples will be included, including lifetime sparsity
     # ---------------------------------------------------------------------------------------------------------------
-    # num_dendrites = self.get_num_dendrites()
-    # usage_dend_3d = tf.reduce_sum(mask_dend_6d, axis=[0,1,2]) # reduce over b,h,w leaving col,cell,dend
-    # usage_dend_1d = tf.reshape(usage_dend_3d, shape=[num_dendrites])
-    # usage_pl = self._dual.get(self.usage).get_pl()
-    # usage_op = usage_pl + usage_dend_1d
-    # self._dual.set_op(self.usage, usage_op)
 
-    usage_col_1d = tf.reduce_sum(mask_cells_5d, axis=[0,1,2, 4]) # reduce over b,h,w: 0,1,2, 4 leaving col (3)
+    usage_col_1d = tf.reduce_sum(mask_cells_5d, axis=[0, 1, 2, 4]) # reduce over b,h,w: 0,1,2, 4 leaving col (3)
     usage_col_pl = self._dual.get(self.usage_col).get_pl()
     usage_col_op = usage_col_pl + usage_col_1d
     self._dual.set_op(self.usage_col, usage_col_op)
 
     num_cells = self._hparams.cols * self._hparams.cells_per_col
-    usage_cell_2d = tf.reduce_sum(mask_cells_5d, axis=[0,1,2]) # reduce over b,h,w: 0,1,2 leaving col,cell (3,4)
+    usage_cell_2d = tf.reduce_sum(mask_cells_5d, axis=[0, 1, 2]) # reduce over b,h,w: 0,1,2 leaving col,cell (3,4)
     usage_cell_1d = tf.reshape(usage_cell_2d, shape=[num_cells])
     usage_cell_pl = self._dual.get(self.usage_cell).get_pl()
     usage_cell_op = usage_cell_pl + usage_cell_1d
@@ -965,11 +886,6 @@ class SequenceMemoryLayer(SummaryComponent):
 
   def _build_nonlinearities(self, f_encoding_cells_5d, r_encoding_cells_5d, b_encoding_cells_5d, mask_cells_5d):
     """Mask the encodings, sum them, and apply nonlinearity. Don't backprop into the mask."""
-
-    # Expand cols to cells 5d 
-    #f_encoding_cells_5d = self._build_cols_4d_to_cells_5d(f_encoding_cols_4d)
-    # f_encoding_cells_5d = tf.tile(tf.expand_dims(f_encoding_cols_4d, -1),
-    #                        [1, 1, 1, 1, self._hparams.cells_per_col])
 
     mask_cells_5d = tf.stop_gradient(mask_cells_5d)
     self._dual.set_op(self.encoding_mask, mask_cells_5d)
@@ -986,10 +902,8 @@ class SequenceMemoryLayer(SummaryComponent):
       hidden_sum_cells_5d = hidden_sum_cells_5d + b_masked_cells_5d
 
     # Nonlinearity
-    # if self._hparams.hidden_nonlinearity == 'tanh':
-    #   hidden_transfer_cells_5d = tf.tanh(hidden_sum_cells_5d)
-    # else:
     hidden_transfer_cells_5d, _ = activation_fn(hidden_sum_cells_5d, self._hparams.hidden_nonlinearity)
+
     return hidden_transfer_cells_5d, hidden_transfer_cells_5d
 
   def _build_decoding(self, input_tensor, hidden_tensor):  # pylint: disable=W0613
@@ -1020,28 +934,30 @@ class SequenceMemoryLayer(SummaryComponent):
       self._optimizer = tf_create_optimizer(self._hparams)
       loss_op_1 = self._build_loss_fn(target, prediction)
       self._dual.set_op(self.loss, loss_op_1)
-      training_op = self._optimizer.minimize(loss_op_1, global_step=tf.train.get_or_create_global_step(), name='training_op')
+      training_op = self._optimizer.minimize(loss_op_1, global_step=tf.train.get_or_create_global_step(),
+                                             name='training_op')
       self._dual.set_op(self.training, training_op)
 
   def _build_loss_fn(self, target, output):
     if self._hparams.loss_type == 'mse':
       return tf.losses.mean_squared_error(target, output)
-    elif self._hparams.loss_type == 'sxe':
-       return tf.losses.sigmoid_cross_entropy(target, output)
-    else:
-      raise NotImplementedError('Loss function not implemented: ' + str(self._hparams.loss_type))
+    if self._hparams.loss_type == 'sxe':
+      return tf.losses.sigmoid_cross_entropy(target, output)
+
+    raise NotImplementedError('Loss function not implemented: ' + str(self._hparams.loss_type))
 
   # COMPONENT INTERFACE ------------------------------------------------------------------
   def update_feed_dict(self, feed_dict, batch_type='training'):
+    """Update the feed dict."""
 
     # Update these dual entities in the normal manner
     # Feedback stays on-graph
-    names = [self.inhibition, self.previous, self.recurrent, self.lifetime_mask] 
+    names = [self.inhibition, self.previous, self.recurrent, self.lifetime_mask]
     self._dual.update_feed_dict(feed_dict, names)
 
     # Optional frequency monitoring
     if self.use_freq():
-      freq_names = [self.usage_cell, self.usage_col, self.freq_cell, self.freq_col] 
+      freq_names = [self.usage_cell, self.usage_col, self.freq_cell, self.freq_col]
       self._dual.update_feed_dict(feed_dict, freq_names)
 
     # Optional feedback
@@ -1056,8 +972,8 @@ class SequenceMemoryLayer(SummaryComponent):
     # Adjust feedback keep rate by batch type
     feedback_keep_rate = 1.0  # Encoding
     if batch_type == self.training:
-      feedback_keep_rate = self._hparams.feedback_keep_rate  # Training    
-    logging.debug('Feedback keep rate: ' + str(feedback_keep_rate))
+      feedback_keep_rate = self._hparams.feedback_keep_rate  # Training
+    logging.debug('Feedback keep rate: %s', str(feedback_keep_rate))
 
     # Placeholder for feedback keep rate
     if self._hparams.feedback_keep_rate < 1.0:
@@ -1070,15 +986,9 @@ class SequenceMemoryLayer(SummaryComponent):
   def add_fetches(self, fetches, batch_type='training'):
     """Adds ops that will get evaluated."""
     # Feedback stays on-graph
-    names = [self.previous,
+    names = [self.previous, self.inhibition,
              self.encoding, self.decoding, self.encoding_mask,
              self.sum_abs_error, self.loss]
-             # self.usage_cell, self.usage_col]
-             # #self.usage, self.usage_cell, self.usage_col]
-
-    # if not self._hparams.autoencode:
-    #   names.append(self.inhibition)
-    names.append(self.inhibition)
 
     self._dual.add_fetches(fetches, names)
 
@@ -1086,10 +996,11 @@ class SequenceMemoryLayer(SummaryComponent):
       freq_names = [self.usage_cell, self.usage_col]
       self._dual.add_fetches(fetches, freq_names)
 
-    do_training = tf_do_training(batch_type, self._hparams.training_interval, self._training_batch_count, name=self.name)
+    do_training = tf_do_training(batch_type, self._hparams.training_interval, self._training_batch_count,
+                                 name=self.name)
     if do_training:
       fetches[self.name].update({
-        self.training: self._dual.get_op(self.training)
+          self.training: self._dual.get_op(self.training)
       })
 
     # Summaries
@@ -1105,16 +1016,9 @@ class SequenceMemoryLayer(SummaryComponent):
     self._loss = self_fetched[self.loss]
 
     # Feedback stays on-graph
-    names = [self.previous,
+    names = [self.previous, self.inhibition,
              self.encoding, self.decoding, self.encoding_mask,
              self.sum_abs_error, self.loss]
-             # self.usage_cell, self.usage_col, self.loss]
-             # #self.usage, self.usage_cell, self.usage_col, self.loss]
-
-    # if not self._hparams.autoencode:
-    #   names.append(self.inhibition)
-
-    names.append(self.inhibition)
 
     self._dual.set_fetches(fetched, names)
 
@@ -1134,7 +1038,7 @@ class SequenceMemoryLayer(SummaryComponent):
   def _build_summaries(self, batch_type, max_outputs=3):
     """Build the summaries for TensorBoard."""
 
-    logging.debug('layer: ' + self.name + ' batch type: ' + batch_type )
+    logging.debug('layer: %s, batch type: %s', self.name, batch_type)
 
     summaries = []
 
@@ -1212,7 +1116,7 @@ class SequenceMemoryLayer(SummaryComponent):
     # Weights statistics
     if self._hparams.summarize_weights:
       w_f = self._weights_f
-      w_b = self._weights_r #self._get_feedback_weights_op
+      w_b = self._weights_r
       summaries.append(tf.summary.scalar('Wf', tf.reduce_sum(tf.abs(w_f))))
       summaries.append(tf.summary.scalar('Wb', tf.reduce_sum(tf.abs(w_b))))
 
@@ -1235,7 +1139,6 @@ class SequenceMemoryLayer(SummaryComponent):
       summaries.append(wf_cols_summary_op)
 
       wb_cells = tf.reshape(w_b, [-1, self._hparams.cols * self._hparams.cells_per_col])  # [weight per col, cols]
-      #wb_cells = tf.transpose(w_b)    # columns of image are cells (groups of cells comprise a col)
       wb_cells_summary_shape = image_utils.make_image_summary_shape_from_2d(wb_cells)
       wb_cells_reshaped = tf.reshape(wb_cells, wb_cells_summary_shape)
       wb_cells_summary_op = tf.summary.image('wb_cells', wb_cells_reshaped, max_outputs=max_outputs)
@@ -1243,15 +1146,9 @@ class SequenceMemoryLayer(SummaryComponent):
 
     # Utilization of resources
     if self._hparams.summarize_freq:
-      #usage = self._dual.get_op(self.usage)
-      #freq = self._dual.get(self.freq).get_pl()
       freq_cell = self._dual.get(self.freq_cell).get_pl()
       freq_col = self._dual.get(self.freq_col).get_pl()
 
-      #summaries.append(tf.summary.histogram('usage_hist', usage))  # not v interesting
-
-      #summaries.append(tf.summary.histogram('freq_dend_hist', freq))
-      #summaries.append(tf.summary.histogram('freq_hist', freq))
       summaries.append(tf.summary.histogram('freq_cell_hist', freq_cell))
       summaries.append(tf.summary.histogram('freq_col_hist', freq_col))
 

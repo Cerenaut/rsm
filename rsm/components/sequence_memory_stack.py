@@ -19,31 +19,20 @@ from __future__ import absolute_import
 from __future__ import division
 from __future__ import print_function
 
-import sys
 import logging
 
-import os
-from os.path import dirname, abspath
-
-import numpy as np
 import tensorflow as tf
 
-from pagi.utils.dual import DualData
-from pagi.utils.layer_utils import activation_fn
-from pagi.utils.tf_utils import tf_build_stats_summaries
-from pagi.utils.tf_utils import tf_build_top_k_mask_4d_op
-from pagi.utils.tf_utils import tf_build_varying_top_k_mask_4d_op
 from pagi.utils.tf_utils import tf_build_interpolate_distributions
 from pagi.utils.tf_utils import tf_build_cross_entropy
 
 from pagi.utils.np_utils import np_uniform
-from pagi.utils.np_utils import np_interpolate_distributions
 
 from pagi.components.summary_component import SummaryComponent
-from pagi.components.sparse_conv_autoencoder_component import SparseConvAutoencoderComponent
 
 from rsm.components.sequence_memory_layer import SequenceMemoryLayer
 from rsm.components.predictor_component import PredictorComponent
+
 
 class SequenceMemoryStack(SummaryComponent):
   """
@@ -92,7 +81,7 @@ class SequenceMemoryStack(SummaryComponent):
         uniform_mass=0.0,
         input_mass=0.0,
         layer_mass=1.0,  # Default to only use layer
-        ensemble_norm_eps = 0.0000000001,  # 0.0001%
+        ensemble_norm_eps=0.0000000001,  # 0.0001%
 
         autoencode=False,
 
@@ -102,8 +91,7 @@ class SequenceMemoryStack(SummaryComponent):
         memory_summarize_decoding=False,
         memory_summarize_weights=False,
         memory_summarize_freq=False,
-        memory_training_interval=[0,-1],
-        #history_forgetting_probability=0.0,
+        memory_training_interval=[0, -1],
 
         # Geometry. A special value of -1 can be used to generate a 1x1 output (non-conv)
         filters_field_width=[28],
@@ -113,12 +101,11 @@ class SequenceMemoryStack(SummaryComponent):
 
         cols=[160],
         cells_per_col=[3],  # 480 = 160 columns * 3 cells
-        #dends_per_cell=[2],  # 960 = 480 cells * 2 dendrites
 
         # Predictor
-        predictor_training_interval=[0,-1],
+        predictor_training_interval=[0, -1],
         predictor_hidden_size=[200],
-        predictor_nonlinearity=['leaky-relu','leaky-relu'],
+        predictor_nonlinearity=['leaky-relu', 'leaky-relu'],
         predictor_optimize='accuracy',  # reconstruction, accuracy
         predictor_loss_type='cross-entropy',
         predictor_keep_rate=1.0,
@@ -143,13 +130,9 @@ class SequenceMemoryStack(SummaryComponent):
 
         # Sparse parameters:
         sparsity=[25],
-        #sparsity_output_factor=1.5,
         lifetime_sparsity_dends=True,
         lifetime_sparsity_cols=True
     )
-
-  def __init__(self):
-    super().__init__()
 
   def update_statistics(self, session):  # pylint: disable=W0613
     """Called after a batch"""
@@ -182,12 +165,12 @@ class SequenceMemoryStack(SummaryComponent):
     for i in range(layers-1):  # e.g. 0,1,2 = 3 layers
       upper = i +1
       lower = i
-      logging.info('Copying feedback from layer ' + str(upper) + ' to layer ' + str(lower))
+      logging.info('Copying feedback from layer %s to layer %s', str(upper), str(lower))
       upper_layer = self.get_layer(upper)
       lower_layer = self.get_layer(lower)
       feedback_values = upper_layer.get_values(SequenceMemoryLayer.encoding)
       lower_layer.set_feedback(feedback_values)
- 
+
   def update_recurrent(self):
     layers = self.get_num_layers()
     for i in range(layers):
@@ -196,6 +179,9 @@ class SequenceMemoryStack(SummaryComponent):
 
   def get_num_layers(self):
     return self._hparams.num_layers
+
+  def get_layers(self):
+    return self._layers
 
   def get_layer(self, layer=None):
     return self._layers[layer]
@@ -206,26 +192,10 @@ class SequenceMemoryStack(SummaryComponent):
       return layers - 1
     return self._hparams.prediction_layer
 
-  # def get_predicted_labels(self):
-  #   #return self._predictor.get_predicted_labels()
-  #   return self._dual.get_values('ensemble-top-1')
-
-  # def get_predicted_distribution(self):
-  #   return self._dual.get_values('ensemble-distribution')
-
-  # def get_prediction_loss(self):
-  #   return self._dual.get_values('ensemble-loss-sum')
-
-  # def get_perplexity(self):
-  #   return self._dual.get_values('ensemble-perplexity')
-
   def get_loss(self):
     if self._hparams.predictor_optimize == 'accuracy':
       return self.get_values(SequenceMemoryStack.ensemble_loss_sum)
     return self.get_values(SequenceMemoryStack.prediction_loss)
-
-  # def set_embedding(self, embedding):
-  #   self._embedding = embedding
 
   def build(self, input_values, input_shape, label_values, label_shape, hparams, decoder=None, name='rsm-stack'):  # pylint: disable=W0221
     """Initializes the model parameters.
@@ -261,7 +231,9 @@ class SequenceMemoryStack(SummaryComponent):
         logging.info('Building layer predictor...')
         layer_predictor_name = 'layer-p'
         layer_predictor_input, layer_predictor_input_shape = self._build_layer_prediction_input()
-        self._layer_predictor = self._build_predictor(layer_predictor_input, layer_predictor_input_shape, label_values, label_shape, predictor_target_values, predictor_target_shape, layer_predictor_name)
+        self._layer_predictor = self._build_predictor(layer_predictor_input, layer_predictor_input_shape, label_values,
+                                                      label_shape, predictor_target_values, predictor_target_shape,
+                                                      layer_predictor_name)
       else:
         logging.info('NOT building layer predictor.')
 
@@ -270,7 +242,9 @@ class SequenceMemoryStack(SummaryComponent):
         logging.info('Building input predictor...')
         input_predictor_name = 'input-p'
         input_predictor_input, input_predictor_input_shape = self._build_input_prediction_input()
-        self._input_predictor = self._build_predictor(input_predictor_input, input_predictor_input_shape, label_values, label_shape, predictor_target_values, predictor_target_shape, input_predictor_name)
+        self._input_predictor = self._build_predictor(input_predictor_input, input_predictor_input_shape, label_values,
+                                                      label_shape, predictor_target_values, predictor_target_shape,
+                                                      input_predictor_name)
       else:
         logging.info('NOT building input predictor.')
 
@@ -302,65 +276,65 @@ class SequenceMemoryStack(SummaryComponent):
     return prediction_logits
 
   def _build_ensemble_prediction(self):
+    """Builds ensemble prediction."""
+    logging.info('Building ensemble...')
+    distributions = []
+    distribution_mass = []
+    num_classes = self._label_shape[-1]
 
-      logging.info('Building ensemble...')
-      distributions = []
-      distribution_mass = []
-      num_classes = self._label_shape[-1]
+    if self._hparams.decode_mass > 0.0:
+      decode_logits = self._build_decode_prediction()
+      decode_distribution = tf.nn.softmax(logits=decode_logits)  # softmax on last dim
+      distributions.append(decode_distribution)
+      distribution_mass.append(self._hparams.decode_mass)
 
-      if self._hparams.decode_mass > 0.0:
-        decode_logits = self._build_decode_prediction()
-        decode_distribution = tf.nn.softmax(logits=decode_logits)  # softmax on last dim
-        distributions.append(decode_distribution)
-        distribution_mass.append(self._hparams.decode_mass)
+    if self._hparams.input_mass > 0.0:
+      input_prediction = self._input_predictor.get_op(PredictorComponent.prediction_softmax)
+      distributions.append(input_prediction)
+      distribution_mass.append(self._hparams.input_mass)
 
-      if self._hparams.input_mass > 0.0:
-        input_prediction = self._input_predictor.get_op(PredictorComponent.prediction_softmax)#_op()
-        distributions.append(input_prediction)
-        distribution_mass.append(self._hparams.input_mass)
+    if self._hparams.uniform_mass > 0.0:
+      uniform = np_uniform(num_classes)
+      distributions.append(uniform)
+      distribution_mass.append(self._hparams.uniform_mass)
 
-      if self._hparams.uniform_mass > 0.0:
-        uniform = np_uniform(num_classes)
-        distributions.append(uniform)
-        distribution_mass.append(self._hparams.uniform_mass)
+    if self._hparams.file_mass > 0.0:
+      file_pl = self._dual.add(self.file, shape=[self._hparams.batch_size, num_classes], default_value=0.0).add_pl()
+      file_sum = tf.reduce_sum(file_pl, axis=1, keepdims=True)# + eps
+      file_norm = file_pl / file_sum
+      distributions.append(file_norm)
+      distribution_mass.append(self._hparams.file_mass)
 
-      if self._hparams.file_mass > 0.0:
-        file_pl = self._dual.add(self.file, shape=[self._hparams.batch_size, num_classes], default_value=0.0).add_pl()
-        file_sum = tf.reduce_sum(file_pl, axis=1, keepdims=True)# + eps
-        file_norm = file_pl / file_sum
-        distributions.append(file_norm)
-        distribution_mass.append(self._hparams.file_mass)
+    if self._hparams.cache_mass > 0.0:
+      cache_pl = self._dual.get_pl(self.cache)
+      cache_sum = tf.reduce_sum(cache_pl, axis=1, keepdims=True) + self._hparams.ensemble_norm_eps
+      cache_norm = cache_pl / cache_sum
+      distributions.append(cache_norm)  # Use the old cache, not with new label ofc
+      distribution_mass.append(self._hparams.cache_mass)
 
-      if self._hparams.cache_mass > 0.0:
-        cache_pl = self._dual.get_pl(self.cache)
-        cache_sum = tf.reduce_sum(cache_pl, axis=1, keepdims=True) + self._hparams.ensemble_norm_eps
-        cache_norm = cache_pl / cache_sum
-        distributions.append(cache_norm)  # Use the old cache, not with new label ofc
-        distribution_mass.append(self._hparams.cache_mass)
+    if self._hparams.layer_mass > 0.0:
+      layer_prediction = self._layer_predictor.get_op(PredictorComponent.prediction_softmax) #prediction_softmax_op()
+      distributions.append(layer_prediction)
+      distribution_mass.append(self._hparams.layer_mass)
 
-      if self._hparams.layer_mass > 0.0:
-        layer_prediction = self._layer_predictor.get_op(PredictorComponent.prediction_softmax) #prediction_softmax_op()
-        distributions.append(layer_prediction)
-        distribution_mass.append(self._hparams.layer_mass)
+    # Build the final distribution, calculate loss
+    ensemble_prediction = tf_build_interpolate_distributions(distributions, distribution_mass, num_classes)
+    cross_entropy_loss = tf_build_cross_entropy(self._label_values, ensemble_prediction)  # Calculate the loss
+    cross_entropy_mean = tf.reduce_mean(cross_entropy_loss)
+    ensemble_perplexity = tf.exp(cross_entropy_mean)  # instantaneous perplexity (exaggerated)
+    ensemble_cross_entropy_sum = tf.reduce_sum(cross_entropy_loss)
+    ensemble_prediction_max = tf.argmax(ensemble_prediction, 1)
 
-      # Build the final distribution, calculate loss
-      ensemble_prediction = tf_build_interpolate_distributions(distributions, distribution_mass, num_classes)
-      cross_entropy_loss = tf_build_cross_entropy(self._label_values, ensemble_prediction)  # Calculate the loss
-      cross_entropy_mean = tf.reduce_mean(cross_entropy_loss)
-      ensemble_perplexity = tf.exp(cross_entropy_mean)  # instantaneous perplexity (exaggerated)
-      ensemble_cross_entropy_sum = tf.reduce_sum(cross_entropy_loss)
-      ensemble_prediction_max = tf.argmax(ensemble_prediction, 1)
+    self._dual.set_op(self.ensemble_distribution, ensemble_prediction)
+    self._dual.set_op(self.ensemble_top_1, ensemble_prediction_max)
+    self._dual.set_op(self.ensemble_perplexity, ensemble_perplexity)
+    self._dual.set_op(self.ensemble_loss_sum, ensemble_cross_entropy_sum)
 
-      self._dual.set_op(self.ensemble_distribution, ensemble_prediction)
-      self._dual.set_op(self.ensemble_top_1, ensemble_prediction_max)
-      self._dual.set_op(self.ensemble_perplexity, ensemble_perplexity)
-      self._dual.set_op(self.ensemble_loss_sum, ensemble_cross_entropy_sum)
-
-      if self._hparams.cache_mass > 0.0:
-        self._build_cache_op(self._label_values, ensemble_prediction)
+    if self._hparams.cache_mass > 0.0:
+      self._build_cache_op(self._label_values, ensemble_prediction)
 
   def _build_cache_pl(self, labels):
-    logging.info('Building cache pl...')
+    logging.info('Building cache placeholder...')
     num_classes = labels.get_shape().as_list()[1]
     cache_pl = self._dual.add(self.cache, shape=[self._hparams.batch_size, num_classes], default_value=0.0).add_pl()
     return cache_pl
@@ -372,31 +346,35 @@ class SequenceMemoryStack(SummaryComponent):
       self._build_simple_cache_op(labels, prediction)
 
   def _build_simple_cache_op(self, labels, prediction):
+    """Builds a simple caching operation."""
+    del prediction
+
     logging.info('Building simple cache op...')
-    num_classes = labels.get_shape().as_list()[1]
 
     cache_increase = labels
     cache_pl = self._dual.get_pl(self.cache)
     cache_decay = cache_pl * self._hparams.cache_decay
     cache_op = tf.maximum(cache_decay, cache_increase)  # Sets to 1 if label set
-    #cache_op = tf.Print(cache_op, [tf.reduce_sum(cache_op)], 'Cache sum ')
     self._dual.set_op(self.cache, cache_op)
     return cache_pl
 
   def _build_smart_cache_op(self, labels, prediction):
-    logging.info('Building smart cache op...')
+    """
+    Builds a smart caching operation.
 
-    # Surprise = "how much mass was predicted before the true label"
-    # If surprise is more, then other values will decay faster due to normalization. We will cache the new value.
-    # If surprise is less, other cache values are retained, not caching the new value.
-    #                  X
-    # 0.1, 0.09, 0.05, 0.02  S = 0.1+0.09+0.05 = 0.24
-    #
-    #            X
-    # 0.1, 0.09, 0.05, 0.02  S = 0.1+0.09+0.05 = 0.19
-    #
-    #      X
-    # 0.1, 0.09, 0.05, 0.02  S = 0.1
+    Surprise = "how much mass was predicted before the true label"
+    If surprise is more, then other values will decay faster due to normalization. We will cache the new value.
+    If surprise is less, other cache values are retained, not caching the new value.
+                     X
+    0.1, 0.09, 0.05, 0.02  S = 0.1+0.09+0.05 = 0.24
+
+               X
+    0.1, 0.09, 0.05, 0.02  S = 0.1+0.09+0.05 = 0.19
+
+         X
+    0.1, 0.09, 0.05, 0.02  S = 0.1
+    """
+    logging.info('Building smart cache op...')
 
     masked_prediction = labels * prediction  # now only a value where label is true (TP). All FP mass is zero.
     predicted_mass = tf.reduce_sum(masked_prediction, axis=1, keepdims=True)  # The predicted mass of the true label (scalar per batch)
@@ -428,6 +406,7 @@ class SequenceMemoryStack(SummaryComponent):
     return prediction_input, prediction_input_shape
 
   def _build_layers(self, input_values, input_shape):
+    """Build the RSM layers."""
     logging.info('Building layers...')
     self._layers = []
 
@@ -457,9 +436,6 @@ class SequenceMemoryStack(SummaryComponent):
 
       layer_hparams.autoencode = self._hparams.autoencode
 
-      # layer_hparams.predictor_uniform_mass = self._hparams.predictor_uniform_mass
-      # layer_hparams.predictor_training_interval = self._hparams.predictor_training_interval
-
       layer_hparams.summarize_input = self._hparams.memory_summarize_input
       layer_hparams.summarize_encoding = self._hparams.memory_summarize_encoding
       layer_hparams.summarize_decoding = self._hparams.memory_summarize_decoding
@@ -467,12 +443,11 @@ class SequenceMemoryStack(SummaryComponent):
       layer_hparams.summarize_freq = self._hparams.memory_summarize_freq
 
       layer_hparams.training_interval = self._hparams.memory_training_interval
-      #layer_hparams.history_forgetting_probability = self._hparams.history_forgetting_probability
 
       layer_hparams.hidden_nonlinearity = self._hparams.hidden_nonlinearity
 
-      layer_hparams.predictor_use_input = False  #self._hparams.predictor_use_input
-      layer_hparams.predictor_inc_input = False  #self._hparams.predictor_inc_input
+      layer_hparams.predictor_use_input = False
+      layer_hparams.predictor_inc_input = False
 
       # Compute conv geometry
       ih = layer_input_shape[1]
@@ -495,7 +470,6 @@ class SequenceMemoryStack(SummaryComponent):
       # Depth dimension - num filters
       layer_hparams.cols = self._hparams.cols[i]
       layer_hparams.cells_per_col = self._hparams.cells_per_col[i]
-      #layer_hparams.dends_per_cell = self._hparams.dends_per_cell[i]
 
       layer_hparams.freq_update_interval = self._hparams.freq_update_interval
       layer_hparams.freq_learning_rate = self._hparams.freq_learning_rate
@@ -510,15 +484,14 @@ class SequenceMemoryStack(SummaryComponent):
       layer_hparams.feedback_norm = self._hparams.feedback_norm[i]
 
       layer_hparams.sparsity = self._hparams.sparsity[i]
-      #layer_hparams.sparsity_output_factor = self._hparams.sparsity_output_factor
       layer_hparams.lifetime_sparsity_dends = self._hparams.lifetime_sparsity_dends
       layer_hparams.lifetime_sparsity_cols = self._hparams.lifetime_sparsity_cols
 
-      logging.debug('layer: %d h/w/s: %d/%d/%d', 
-            i, 
-            layer_hparams.filters_field_height, 
-            layer_hparams.filters_field_width,
-            layer_hparams.filters_field_stride)
+      logging.debug('layer: %d h/w/s: %d/%d/%d',
+                    i,
+                    layer_hparams.filters_field_height,
+                    layer_hparams.filters_field_width,
+                    layer_hparams.filters_field_stride)
 
       layer_shape = SequenceMemoryLayer.get_encoding_shape_4d(layer_input_shape, layer_hparams)
 
@@ -530,7 +503,7 @@ class SequenceMemoryStack(SummaryComponent):
       # Max-pooling - affects next layer input shape
       pool_size = self._hparams.pool_size[i]
       if pool_size > 1:
-        logging.info('Pooling ' + str(pool_size) + ':1')
+        logging.info('Pooling %s:1', str(pool_size))
         layer_input_shape[1] = int(layer_input_shape[1] / pool_size)
         layer_input_shape[2] = int(layer_input_shape[2] / pool_size)
 
@@ -554,7 +527,8 @@ class SequenceMemoryStack(SummaryComponent):
         logging.info('Feed-forward connectivity enabled.')
 
 
-      layer.build(layer_input_values, layer_input_shape, layer_hparams, name=layer_name, encoding_shape=None, feedback_shape=layer_feedback_shape)
+      layer.build(layer_input_values, layer_input_shape, layer_hparams, name=layer_name, encoding_shape=None,
+                  feedback_shape=layer_feedback_shape)
 
       self._layers.append(layer)
 
@@ -565,7 +539,7 @@ class SequenceMemoryStack(SummaryComponent):
 
       pool_size = self._hparams.pool_size[i]
       if pool_size > 1:
-        logging.info('Pooling ' + str(pool_size) + ':1')
+        logging.info('Pooling %s:1', str(pool_size))
         pool_sizes = [1, pool_size, pool_size, 1]
         pool_strides = [1, pool_size, pool_size, 1]
         layer_input_values = tf.nn.max_pool(output_encoding, pool_sizes, pool_strides, padding='SAME')
@@ -573,7 +547,9 @@ class SequenceMemoryStack(SummaryComponent):
       #print( "output encoding, ", output_encoding)
       layer_input_shape = layer_input_values.shape.as_list()
 
-  def _build_predictor(self, prediction_input, prediction_input_shape, label_values, label_shape, target_values, target_shape, name='p'):
+  def _build_predictor(self, prediction_input, prediction_input_shape, label_values, label_shape, target_values,
+                       target_shape, name='p'):
+    """Build the predictor using outputs from RSM layers."""
 
     # Build the predictor
     predictor = PredictorComponent()
@@ -587,9 +563,7 @@ class SequenceMemoryStack(SummaryComponent):
     predictor_hparams.momentum = self._hparams.momentum
     predictor_hparams.momentum_nesterov = self._hparams.momentum_nesterov
 
-    # predictor_hparams.cache_decay = self._hparams.predictor_cache_decay
-    # predictor_hparams.cache_mass = self._hparams.predictor_cache_mass
-    predictor_hparams.uniform_mass = 0.0  #self._hparams.predictor_uniform_mass
+    predictor_hparams.uniform_mass = 0.0
     predictor_hparams.training_interval = self._hparams.predictor_training_interval
     predictor_hparams.nonlinearity = self._hparams.predictor_nonlinearity
     predictor_hparams.hidden_size = self._hparams.predictor_hidden_size
@@ -597,14 +571,13 @@ class SequenceMemoryStack(SummaryComponent):
     predictor_hparams.l2_regularizer = self._hparams.predictor_l2_regularizer
     predictor_hparams.label_smoothing = self._hparams.predictor_label_smoothing
 
-    predictor.build(prediction_input, prediction_input_shape, label_values, label_shape, target_values, target_shape, predictor_hparams, name=name)
+    predictor.build(prediction_input, prediction_input_shape, label_values, label_shape, target_values, target_shape,
+                    predictor_hparams, name=name)
     return predictor
 
   # BATCH INTERFACE ------------------------------------------------------------------
   def update_feed_dict(self, feed_dict, batch_type='training'):
-
-    #previous = self._dual.get('previous')  # 4d_input: b, xh, xw, xd = 4d
-
+    """Updates the feed dict in each layer."""
     if self._hparams.decode_mass > 0.0:
       self._decoder.update_feed_dict(feed_dict, batch_type)
 
@@ -640,7 +613,7 @@ class SequenceMemoryStack(SummaryComponent):
       })
 
   def add_fetches(self, fetches, batch_type='training'):
-
+    """Add fetches in each layer for session run call."""
     # Layers
     layers = self.get_num_layers()
     for i in range(layers):
@@ -657,28 +630,28 @@ class SequenceMemoryStack(SummaryComponent):
     fetches[self.name] = {}
     if self._hparams.cache_mass > 0.0:
       fetches[self.name].update({
-        SequenceMemoryStack.cache: self._dual.get_op(SequenceMemoryStack.cache),
+          SequenceMemoryStack.cache: self._dual.get_op(SequenceMemoryStack.cache),
       })
 
     # Ensemble
     if self._hparams.predictor_optimize == 'accuracy':
       fetches[self.name].update({
-        self.ensemble_distribution: self._dual.get_op(self.ensemble_distribution),
-        self.ensemble_top_1: self._dual.get_op(self.ensemble_top_1),
-        self.ensemble_perplexity: self._dual.get_op(self.ensemble_perplexity),
-        self.ensemble_loss_sum: self._dual.get_op(self.ensemble_loss_sum)
+          self.ensemble_distribution: self._dual.get_op(self.ensemble_distribution),
+          self.ensemble_top_1: self._dual.get_op(self.ensemble_top_1),
+          self.ensemble_perplexity: self._dual.get_op(self.ensemble_perplexity),
+          self.ensemble_loss_sum: self._dual.get_op(self.ensemble_loss_sum)
       })
     else:
       fetches[self.name].update({
-        self.prediction: self._dual.get_op(self.prediction),
-        self.prediction_loss: self._dual.get_op(self.prediction_loss)
+          self.prediction: self._dual.get_op(self.prediction),
+          self.prediction_loss: self._dual.get_op(self.prediction_loss)
       })
 
     # Summaries
     super().add_fetches(fetches, batch_type)
 
   def set_fetches(self, fetched, batch_type='training'):
-
+    """Set fetches in each layer."""
     # Layers
     layers = self.get_num_layers()
     for i in range(layers):
@@ -706,14 +679,14 @@ class SequenceMemoryStack(SummaryComponent):
     else:
       names.append(self.prediction)
       names.append(self.prediction_loss)
-      
+
     self._dual.set_fetches(fetched, names)
 
     # Summaries
     super().set_fetches(fetched, batch_type)
 
   def write_summaries(self, step, writer, batch_type='training'):
-
+    """Write the TensorBoard summaries for each layer."""
     # Layers
     layers = self.get_num_layers()
     for i in range(layers):
@@ -729,8 +702,8 @@ class SequenceMemoryStack(SummaryComponent):
     # Summaries
     super().write_summaries(step, writer, batch_type)
 
-  def build_summaries(self, batch_types=None, scope=None):
-    """Builds all summaries."""
+  def build_summaries(self, batch_types=None, max_outputs=3, scope=None):
+    """Builds the summaries for each layer."""
 
     # Layers
     layers = self.get_num_layers()
@@ -745,4 +718,7 @@ class SequenceMemoryStack(SummaryComponent):
       self._input_predictor.build_summaries(batch_types)
 
     # Summaries
-    super().build_summaries(batch_types, scope)
+    super().build_summaries(batch_types, max_outputs, scope)
+
+  def _build_summaries(self, batch_type, max_outputs=3):
+    pass

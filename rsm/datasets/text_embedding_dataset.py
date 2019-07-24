@@ -1,4 +1,4 @@
-# Copyright (C) 2018 Project AGI
+# Copyright (C) 2019 Project AGI
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -13,9 +13,8 @@
 # limitations under the License.
 # ==============================================================================
 
-"""TextEmbeddingDataset using the tf.data module."""
+"""TextEmbeddingDataset class."""
 
-import random
 import logging
 import os.path
 
@@ -24,10 +23,7 @@ import tensorflow as tf
 
 from pagi.datasets.dataset import Dataset
 
-from pagi.utils.embedding import Embedding
-from pagi.utils.sparse_embedding import SparseEmbedding
-from pagi.utils.dense_embedding import DenseEmbedding
-from pagi.utils.semantic_embedding import SemanticEmbedding
+from pagi.utils.embedding import SparseEmbedding, DenseEmbedding, SemanticEmbedding
 
 
 class TextEmbeddingDataset(Dataset):  # pylint: disable=W0223
@@ -53,18 +49,19 @@ class TextEmbeddingDataset(Dataset):  # pylint: disable=W0223
 
   def get_embedding(self):
     return self._embedding
-    
+
   def get_subset(self, key):
+    """Get a subset of the data."""
     if key in self._subsets:
       subset = self._subsets[key]
       return subset
 
     subset = {
-      'size': 0,
-      'corpus':None,
-      'offsets' : np.zeros(self._batch_size, dtype=np.int32),
-      'lengths' : np.zeros(self._batch_size, dtype=np.int32),
-      'mask' : np.zeros(self._batch_size, dtype=np.float32)  # Default zeros = clear all
+        'size': 0,
+        'corpus': None,
+        'offsets': np.zeros(self._batch_size, dtype=np.int32),
+        'lengths': np.zeros(self._batch_size, dtype=np.int32),
+        'mask': np.zeros(self._batch_size, dtype=np.float32)  # Default zeros = clear all
     }
     self._subsets[key] = subset
     return subset
@@ -78,18 +75,20 @@ class TextEmbeddingDataset(Dataset):  # pylint: disable=W0223
     return self._dataset(preprocess, options, self._embedding, 'test', random_offsets=False)
 
   def get_words(self, embedding, text_file, eos):
+    """Get a list of words from the corpus."""
+    del eos
+
     sentences = embedding.read_corpus_files([text_file])
 
     corpus = []
     for sentence in sentences:
       for word in sentence:
         corpus.append(word)
-      #corpus.append(eos)
 
     return corpus
 
   def is_test_state(self, subset):
-
+    """Check if subset contains test state."""
     # A note about timing.
     # The current input x or label l is predicted withut using current x
     # Perplexity is measured every step
@@ -111,17 +110,22 @@ class TextEmbeddingDataset(Dataset):  # pylint: disable=W0223
       return True
     return False
 
-  def _create_embedding(self, train_text_file, test_text_file, embedding_file, embedding_shape, embedding_sparsity, eos):    
+  def _create_embedding(self, train_text_file, test_text_file, embedding_file, embedding_shape,
+                        embedding_sparsity, eos):
     if self._embedding_type == 'sparse':
-      return self._create_sparse_embedding(train_text_file, test_text_file, embedding_file, embedding_shape, embedding_sparsity, eos)
-    elif self._embedding_type == 'dense':
-      return self._create_dense_embedding(train_text_file, test_text_file, embedding_file, embedding_shape, embedding_sparsity, eos)
-    else:
-      return self._create_semantic_embedding(train_text_file, test_text_file, embedding_file, embedding_shape, embedding_sparsity, eos)
+      return self._create_sparse_embedding(train_text_file, test_text_file, embedding_file, embedding_shape,
+                                           embedding_sparsity, eos)
+    if self._embedding_type == 'dense':
+      return self._create_dense_embedding(train_text_file, test_text_file, embedding_file, embedding_shape,
+                                          embedding_sparsity, eos)
+    return self._create_semantic_embedding(train_text_file, test_text_file, embedding_file, embedding_shape,
+                                           embedding_sparsity, eos)
 
-  def _create_sparse_embedding(self, train_text_file, test_text_file, embedding_file, embedding_shape, embedding_sparsity, eos):
+  def _create_sparse_embedding(self, train_text_file, test_text_file, embedding_file, embedding_shape,
+                               embedding_sparsity, eos):
+    """Create a sparse embedding."""
     embedding = SparseEmbedding()
-    if not os.path.isfile(embedding_file): #self._opts['create_embedding']:
+    if not os.path.isfile(embedding_file):
       logging.info('Creating sparse embedding...')
       embedding.create([train_text_file, test_text_file], embedding_file, embedding_shape, embedding_sparsity, eos)
 
@@ -132,25 +136,27 @@ class TextEmbeddingDataset(Dataset):  # pylint: disable=W0223
 
     return embedding, embedding_shape
 
-  def _create_dense_embedding(self, train_text_file, test_text_file, embedding_file, embedding_shape, embedding_sparsity, eos):
+  def _create_dense_embedding(self, train_text_file, test_text_file, embedding_file, embedding_shape,
+                              embedding_sparsity, eos):
+    """Create a dense embedding."""
     embedding = DenseEmbedding()
     corpus_files = [train_text_file, test_text_file]
-    if not os.path.isfile(embedding_file): #self._opts['create_embedding']:
+    if not os.path.isfile(embedding_file):
       logging.info('Creating dense embedding...')
-      embedding_shape = embedding.create(corpus_files, embedding_file, embedding_shape, embedding_sparsity, eos)    
+      embedding_shape = embedding.create(corpus_files, embedding_file, embedding_shape, embedding_sparsity, eos)
     else:
       embedding_shape = embedding.create_shape(corpus_files, eos)
 
     logging.info('Reading embedding...')
     embedding.read(embedding_file)
 
-    # embedding.check()
-
     return embedding, embedding_shape
 
-  def _create_semantic_embedding(self, train_text_file, test_text_file, embedding_file, embedding_shape, embedding_sparsity, eos):
+  def _create_semantic_embedding(self, train_text_file, test_text_file, embedding_file, embedding_shape,
+                                 embedding_sparsity, eos):
+    """Create a semantic embedding."""
     embedding = SemanticEmbedding()
-    if not os.path.isfile(embedding_file): #self._opts['create_embedding']:
+    if not os.path.isfile(embedding_file):
       logging.info('Creating semantic embedding...')
       embedding.create([train_text_file, test_text_file], embedding_file, embedding_shape, embedding_sparsity, eos)
 
@@ -158,7 +164,9 @@ class TextEmbeddingDataset(Dataset):  # pylint: disable=W0223
     embedding.read(embedding_file)
     return embedding, embedding_shape
 
-  def setup(self, batch_size, train_text_file, test_text_file, embedding_type, embedding_file, embedding_shape, embedding_sparsity, max_sequence_length, eos='<end>'):
+  def setup(self, batch_size, train_text_file, test_text_file, embedding_type, embedding_file, embedding_shape,
+            embedding_sparsity, max_sequence_length, eos='<end>'):
+    """Setup the text embedding dataset."""
 
     embedding_size = np.prod(embedding_shape[:])
     logging.info('Batch size: %s', str(batch_size))
@@ -171,11 +179,11 @@ class TextEmbeddingDataset(Dataset):  # pylint: disable=W0223
 
     self._eos = eos
     self._embedding_type = embedding_type
-    #self._embedding_shape = embedding_shape
     self._batch_size = int(batch_size)
     self._max_length = int(max_sequence_length)
 
-    self._embedding, self._embedding_shape = self._create_embedding(train_text_file, test_text_file, embedding_file, embedding_shape, embedding_sparsity, eos)
+    self._embedding, self._embedding_shape = self._create_embedding(train_text_file, test_text_file, embedding_file,
+                                                                    embedding_shape, embedding_sparsity, eos)
 
     emb_keys = self._embedding.get_num_keys()
     emb_vals = self._embedding.get_num_values()
@@ -194,7 +202,6 @@ class TextEmbeddingDataset(Dataset):  # pylint: disable=W0223
       logging.error('Some tokens missing from embedding.')
 
     # Override base dataset properties:
-    #self._dataset_shape = [-1, 1, self._embedding_shape[0], self._embedding_shape[1]]
     self._dataset_shape = [-1, self._embedding_shape[0], self._embedding_shape[1], 1]
     self._num_classes = emb_keys
 
@@ -233,9 +240,6 @@ class TextEmbeddingDataset(Dataset):  # pylint: disable=W0223
       max_seq_length = max_length # Truncate sequences to this length
 
     # Initialise the sequence list with N (=batch_size) sequences
-    #sequences = self._select_sequences(self._batch_size, sentences)
-    embedding_size = self._embedding.get_num_values()
-    #embedding_shape = [1, self._embedding_shape[0], self._embedding_shape[1]]
     embedding_shape = [self._embedding_shape[0], self._embedding_shape[1], 1]
 
     def get_random_index(num_words, max_length):
@@ -262,7 +266,6 @@ class TextEmbeddingDataset(Dataset):  # pylint: disable=W0223
 
       # Loop indefinitely
       while True:
-        #print( "Seq offsets: ", self._sequence_offsets)
         for b in range(self._batch_size):
 
           i = sequence_offsets[b]
@@ -290,21 +293,17 @@ class TextEmbeddingDataset(Dataset):  # pylint: disable=W0223
             i = 0  # Wrap to start
             mask = 0.0  # clear
 
-          logging.debug('Dataset subset: %s batch %d mask: %f offset: %s len: %d of %d', subset_key, b, mask, i, z, num_words)
+          logging.debug('Dataset subset: %s batch %d mask: %f offset: %s len: %d of %d',
+                        subset_key, b, mask, i, z, num_words)
 
           sequence_offsets[b] = i
           sequence_lengths[b] = z
           reset_masks[b] = mask  # need to produce a mask for NEXT sample.
 
-          # idx, _ = self._pick_sample(labels, sample_idx, options['example_type'])
-          # yield (images[key], labels[key])
           values = self._embedding.get_values(key)
-          #print('values:', values)
-          #print('reshape shape:', embedding_shape)
           values_3d = np.reshape(values, embedding_shape)
           label = self._embedding.get_index(key)
 
-          #print( "Batch=", b, "key= ", key, " val[0]=", values[0], ' Label: ', label)
           yield (values_3d, label)
 
     # Calculate size of embedding

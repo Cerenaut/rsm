@@ -1,4 +1,4 @@
-# Copyright (C) 2018 Project AGI
+# Copyright (C) 2019 Project AGI
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -21,14 +21,11 @@ from __future__ import print_function
 
 import os
 import logging
-from PIL import Image
 
 import numpy as np
 import tensorflow as tf
 import matplotlib.pyplot as plt
 import matplotlib.animation as animation
-
-from pagi.utils import tf_utils
 
 from rsm.workflows.image_sequence_workflow import ImageSequenceWorkflow
 
@@ -48,7 +45,7 @@ class VideoWorkflow(ImageSequenceWorkflow):
     self._num_repeats = 1
 
     super().__init__(session, dataset_type, dataset_location, component_type, hparams_override, eval_opts, export_opts,
-               opts, summarize, seed, summary_dir, checkpoint_opts)
+                     opts, summarize, seed, summary_dir, checkpoint_opts)
 
   @staticmethod
   def default_opts():
@@ -148,7 +145,7 @@ class VideoWorkflow(ImageSequenceWorkflow):
 
     self._component.update_history(self._session, history_mask)
 
-  def training(self, dataset_handle, global_step):
+  def training(self, dataset_handle, global_step):  # pylint: disable=arguments-differ
     """The training procedure within the batch loop"""
 
     if self._freeze_training:
@@ -169,6 +166,7 @@ class VideoWorkflow(ImageSequenceWorkflow):
     self._do_batch(dataset_handle, batch_type, data_subset, global_step)
 
   def _compute_prime_end(self, states):
+    """Start self-looping when model is primed."""
     for b in range(self._hparams.batch_size):
       state = states[b]
 
@@ -182,7 +180,7 @@ class VideoWorkflow(ImageSequenceWorkflow):
         self.set_previous_frame(previous)
 
   def set_previous_frame(self, previous):
-    self._component.get_layer(0)._dual.set_values('previous', previous)
+    self._component.get_layer(0).get_dual().set_values('previous', previous)
 
   def get_decoded_frame(self):
     return self._component.get_layer(0).get_values(SequenceMemoryLayer.decoding)
@@ -223,14 +221,13 @@ class VideoWorkflow(ImageSequenceWorkflow):
       self._output_frames.append(decoding)
       self._groundtruth_frames.append(inputs)
 
-    # Resets the history at end of a sequence
-    # self._compute_end_state_mask(states)
-
     self._do_batch_after_hook(global_step, batch_type, fetched, feed_dict)
 
     return feed_dict
 
   def _do_batch_after_hook(self, global_step, batch_type, fetched, feed_dict):
+    del global_step, batch_type, feed_dict
+
     # Output as feedback for next step
     self._component.update_recurrent_and_feedback()
     self._component.update_statistics(self._session)
@@ -239,6 +236,7 @@ class VideoWorkflow(ImageSequenceWorkflow):
     self._compute_end_state_mask(fetched['states'])
 
   def frames_to_video(self, input_frames, filename=None):
+    """Convert given frames to video format, and export it to disk."""
     plt.switch_backend('agg')
 
     if filename is None:
@@ -247,7 +245,7 @@ class VideoWorkflow(ImageSequenceWorkflow):
     def chunks(l, n):
       """Yield successive n-sized chunks from l."""
       for i in range(0, len(l), n):
-          yield l[i:i + n]
+        yield l[i:i + n]
 
     sequence_chunks = list(chunks(input_frames, self._sequence_length))
 
@@ -273,14 +271,15 @@ class VideoWorkflow(ImageSequenceWorkflow):
       ani.save(filepath)
 
   def run(self, num_batches, evaluate, train=True):
-    super(ImageSequenceWorkflow, self).run(num_batches, evaluate, train)
+    super(ImageSequenceWorkflow, self).run(num_batches, evaluate, train)  # pylint: disable=bad-super-call
 
   def helper_evaluate(self, batch):
+    """Evaluation method."""
     logging.info('Evaluate starting...')
 
     self._test_on_training_set = True
     if self._test_on_training_set is True:
-      testing_handle  = self._session.run(self._dataset_iterators['training'].string_handle())
+      testing_handle = self._session.run(self._dataset_iterators['training'].string_handle())
     else:
       testing_handle = self._session.run(self._dataset_iterators['testing'].string_handle())
       self._session.run(self._dataset_iterators['testing'].initializer)

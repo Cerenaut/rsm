@@ -1,4 +1,4 @@
-# Copyright (C) 2018 Project AGI
+# Copyright (C) 2019 Project AGI
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -19,19 +19,10 @@ from __future__ import absolute_import
 from __future__ import division
 from __future__ import print_function
 
-import os
-import logging
-from PIL import Image
-
 import numpy as np
 import tensorflow as tf
-import matplotlib.pyplot as plt
-import matplotlib.animation as animation
-
-from pagi.utils import tf_utils
 
 from rsm.workflows.video_workflow import VideoWorkflow
-from rsm.components.sequence_memory_stack import SequenceMemoryStack
 from rsm.components.sequence_memory_layer import SequenceMemoryLayer
 
 class MovingMNISTWorkflow(VideoWorkflow):
@@ -51,7 +42,7 @@ class MovingMNISTWorkflow(VideoWorkflow):
     inputs = fetched['inputs']
 
     # Get decoding to calculate the loss
-    decoding = self._component._layers[0].get_values(SequenceMemoryLayer.decoding)
+    decoding = self._component.get_layer(0).get_values(SequenceMemoryLayer.decoding)
     decoding = np.clip(decoding, 0.0, 1.0)
 
     # Compute cross entropy loss
@@ -60,7 +51,6 @@ class MovingMNISTWorkflow(VideoWorkflow):
     # Write summaries
     summary = tf.Summary()
     summary.value.add(tag=self._component.name + '/summaries/' + batch_type + '/bce_loss',
-                  simple_value=bce_loss)
+                      simple_value=bce_loss)
     self._writer.add_summary(summary, global_step)
     self._writer.flush()
-

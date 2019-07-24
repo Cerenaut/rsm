@@ -1,4 +1,4 @@
-# Copyright (C) 2018 Project AGI
+# Copyright (C) 2019 Project AGI
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -13,25 +13,19 @@
 # limitations under the License.
 # ==============================================================================
 
-"""PtbWorkflow class."""
+"""LanguageWorkflow class."""
 
 from __future__ import absolute_import
 from __future__ import division
 from __future__ import print_function
 
-import os
 import logging
 import math
 
 import numpy as np
 import tensorflow as tf
-#import matplotlib.pyplot as plt
-try:
-    import matplotlib.pyplot as plt
-except:
-    print("To use the plotting feature, you must download the 'matplotlib' package")
+import matplotlib.pyplot as plt
 
-from pagi.utils.np_utils import np_pad_with
 from pagi.utils.np_utils import np_softmax
 from pagi.utils.np_utils import np_accuracy
 from pagi.utils.moving_average_summaries import MovingAverageSummaries
@@ -39,7 +33,7 @@ from pagi.utils.embedding import Embedding
 from pagi.workflows.workflow import Workflow
 
 from rsm.components.sequence_memory_stack import SequenceMemoryStack
-from rsm.datasets.text_embedding_decoder import TextEmbeddingDecoder
+from rsm.components.text_embedding_decoder import TextEmbeddingDecoder
 
 class LanguageWorkflow(Workflow):
   """Next word prediction perplexity for natural language modelling."""
@@ -90,7 +84,8 @@ class LanguageWorkflow(Workflow):
 
       embedding_shape = [int(embedding_h), int(embedding_w)]
       self._dataset = self._dataset_type(self._dataset_location)
-      self._dataset.setup(int(self._hparams.batch_size), corpus_train_file, corpus_test_file, embedding_type, embedding_file, embedding_shape, embedding_sparsity, max_sequence_length)
+      self._dataset.setup(int(self._hparams.batch_size), corpus_train_file, corpus_test_file, embedding_type,
+                          embedding_file, embedding_shape, embedding_sparsity, max_sequence_length)
 
       # Dataset for training
       train_dataset = self._dataset.get_train(options=self._opts)
@@ -144,8 +139,8 @@ class LanguageWorkflow(Workflow):
     decoder = TextEmbeddingDecoder(decoder_name, self._dataset)
 
     self._component = self._component_type()
-    self._component.build(self._inputs, self._dataset.shape, 
-                          labels_one_hot, labels_one_hot_shape, 
+    self._component.build(self._inputs, self._dataset.shape,
+                          labels_one_hot, labels_one_hot_shape,
                           self._hparams, decoder)
 
     self._moving_average = MovingAverageSummaries()
@@ -168,17 +163,12 @@ class LanguageWorkflow(Workflow):
     if test_distributions_filename is not None:
       if self._test_distributions is None:
         self._test_distributions = np.load(test_distributions_filename)
-        #print('test dist shape: ', self._test_distributions.shape)
 
-      #print('Fetching file sample ', global_step)
       sample = self._test_distributions[global_step]
-      #print('sample shape: ', sample.shape)
       batch_sample = np.expand_dims(sample, 0)
-      #print('batch sample shape: ', batch_sample.shape)
       batch_samples = np.tile(batch_sample, [self._hparams.batch_size, 1])
-      #print('batch sampleS shape: ', batch_samples.shape)
 
-      file_dual = self._component._dual.get(SequenceMemoryStack.file)
+      file_dual = self._component.get_dual().get(SequenceMemoryStack.file)
       file_dual.set_values(batch_samples)
 
     batch_type = 'encoding'
@@ -186,7 +176,7 @@ class LanguageWorkflow(Workflow):
     stochastic_forgetting_probability = 0.0  # Don't forget at test time
     self._do_batch(dataset_handle, batch_type, data_subset, global_step, stochastic_forgetting_probability)
 
-  def training(self, dataset_handle, global_step):
+  def training(self, dataset_handle, global_step):  # pylint: disable=arguments-differ
     """The training procedure within the batch loop"""
 
     batch_type = 'training'
@@ -207,7 +197,8 @@ class LanguageWorkflow(Workflow):
     self._component.forget_history(self._session, stochastic_forgetting_probability)
 
     # History update with per-batch-sample flag for whether to clear
-    if False:
+    update_history = False
+    if update_history:
       subset = self._dataset.get_subset(data_subset)
       history_mask = subset['mask']
       self._component.update_history(self._session, history_mask)
@@ -230,19 +221,17 @@ class LanguageWorkflow(Workflow):
         predictions = self._component.get_predicted_distribution()
         logits_max = np.argmax(predictions, axis=1)  # Top prediction
         logit_index = logits_max[0]  # index of max logit for batch = 0
-        word = self._dataset._embedding.get_key(logit_index)
-        #print('Logit #', logit_index, ' word: ', word)
+        word = self._dataset.get_embedding().get_key(logit_index)
 
         # Place some token from the prediction
-        #self._generated.append(word)
         self._generated = self._generated + word + ' '
         print('Generated: ', self._generated)
 
       # look up the embedding for that token
-      embedding_values = self._dataset._embedding.get_values(word)
-      embedding_values_reshape = np.reshape(embedding_values, [20,20,1])
+      embedding_values = self._dataset.get_embedding().get_values(word)
+      embedding_values_reshape = np.reshape(embedding_values, [20, 20, 1])
       previous_values = np.expand_dims(embedding_values_reshape, 0)  # Insert batch dimension
-      self._component._layers[0]._dual.set_values('previous', previous_values)
+      self._component.get_layer(0).get_dual().set_values('previous', previous_values)
 
     # Provide new data
     feed_dict = {
@@ -266,15 +255,14 @@ class LanguageWorkflow(Workflow):
 
       # Accuracy
       accuracy = np_accuracy(predicted_labels, labels)
-      accuracy_average = self._moving_average.update('accuracy', accuracy, self._writer, batch_type, batch=global_step, prefix=self._component.name)
+      self._moving_average.update('accuracy', accuracy, self._writer, batch_type, batch=global_step,
+                                  prefix=self._component.name)
 
-      #if batch_type != 'training':
       measure_perplexity = self._opts['measure_perplexity']
       measure_interval = self._opts['measure_interval']
       if measure_perplexity:
 
         # Calculate cumulative loss and accurate perplexity
-        #prediction_loss = self._component.get_prediction_loss()
         prediction_loss = self._component.get_values(SequenceMemoryStack.ensemble_loss_sum)
         self._loss_sum += prediction_loss
         self._loss_samples += self._hparams.batch_size
@@ -282,7 +270,7 @@ class LanguageWorkflow(Workflow):
         self._perplexity = math.exp(self._loss_mean)
 
         print_perplexity = False
-        #print_perplexity = True
+
         if print_perplexity:
           logging.info('Perplexity %f Loss mean %f  Samples %f', self._perplexity, self._loss_mean, self._loss_samples)
 
@@ -298,12 +286,12 @@ class LanguageWorkflow(Workflow):
     debug_errors = self._opts['debug']
     if debug_errors:  #and global_step > 100:
       predictions = self._component.get_predicted_distribution()
-      n = 120  #25 #120
-      max_perplexity = 5000.0
+      n = 120  # OR: 25, 120
+      # max_perplexity = 5000.0
       perplexity = self._component.get_perplexity()
-      #perplexity = min(max_perplexity, perplexity)  # Graphs are illegible otherwise
-      batch_size = predictions.shape[0]
-      num_classes = predictions.shape[1]
+      # perplexity = min(max_perplexity, perplexity)  # Graphs are illegible otherwise
+      # batch_size = predictions.shape[0]
+      # num_classes = predictions.shape[1]
       b = 0
       logits_max = np.argmax(predictions, axis=1)
       label = labels[b]
@@ -311,19 +299,16 @@ class LanguageWorkflow(Workflow):
       correct = 0
       if label == logit_max:
         correct = 1
-      label_word = self._dataset._embedding.get_key(label)
+      label_word = self._dataset.get_embedding().get_key(label)
 
-      print('OK? ', correct, ' label:', label_word, '-> ', label, ' logit_max: ', logit_max )
+      print('OK? ', correct, ' label:', label_word, '-> ', label, ' logit_max: ', logit_max)
 
       softmax = np_softmax(predictions[b])
 
       logits_sorted = predictions[b].argsort()[::-1]
-      #logits_top_n = np.argpartition(predictions[b], -n)[-n:]
-      #print('top_n =  ', logits_sorted )
 
       pl_values = np.zeros(n+1)
       pl_truth = np.zeros(n+1)
-      #pl_softmax = np.zeros(n+1)
       pl_labels = []
 
       show_softmax = True
@@ -332,10 +317,9 @@ class LanguageWorkflow(Workflow):
       else:
         pl_values[0] = predictions[b][label]
 
-      #pl_softmax[0] = 1.0
       pl_labels.append(label_word + ' -')
 
-      prediction_rank = np.where(logits_sorted==label)[0]
+      prediction_rank = np.where(logits_sorted == label)[0]
       print('red rank', prediction_rank)
 
       for i in range(0, n):
@@ -345,36 +329,35 @@ class LanguageWorkflow(Workflow):
         else:
           value = predictions[b][index]
         pl_values[i+1] = value
-        #pl_softmax[i+1] = softmax[index]
-        label_word = self._dataset._embedding.get_key(index) + ' ' + str(i+1)
+
+        label_word = self._dataset.get_embedding().get_key(index) + ' ' + str(i+1)
         if index == label:
           pl_truth[i+1] = pl_values[i+1]
         pl_labels.append(label_word)
 
       # PLOTTING
-      n_groups = n +1
       # https://matplotlib.org/gallery/statistics/barchart_demo.html
+      n_groups = n +1
+      index = np.arange(n_groups)
+      # bar_width = 0.8
+      # opacity = 1.0
+      # error_config = {'ecolor': '0.3'}
+
       fig, ax = plt.subplots()
 
-      index = np.arange(n_groups)
-      bar_width = 0.8
+      # rects1 = ax.bar(index, pl_values, bar_width,
+      #                 alpha=opacity, color='b',
+      #                 label='Logits')
 
-      opacity = 1.0
-      error_config = {'ecolor': '0.3'}
-
-      rects1 = ax.bar(index, pl_values, bar_width,
-                      alpha=opacity, color='b',
-                      label='Logits')
-
-      rects2 = ax.bar(index, pl_truth, bar_width,
-                      alpha=opacity, color='r',
-                      label='True')
+      # rects2 = ax.bar(index, pl_truth, bar_width,
+      #                 alpha=opacity, color='r',
+      #                 label='True')
 
       # rects3 = ax.bar(index, pl_softmax, bar_width,
       #                 alpha=opacity, color='g',
       #                 label='Softmax')
 
-      #n_groups = 5
+      # n_groups = 5
       # rects1 = ax.bar(index, means_men, bar_width,
       #                 alpha=opacity, color='b',
       #                 error_kw=error_config,
@@ -388,8 +371,7 @@ class LanguageWorkflow(Workflow):
       ax.set_xlabel('Rank')
       ax.set_ylabel('Logit value')
       ax.set_title('#' + str(global_step) + ' Rank ' +str(prediction_rank) + ' Perplexity: ' + str(perplexity))
-      ax.set_xticks(index + 0) #bar_width / 2)
-      #ax.set_xticklabels(('Aaaaaa', 'B', 'C', 'D', 'E'), rotation='vertical')
+      ax.set_xticks(index + 0)
       ax.set_xticklabels(pl_labels, rotation='vertical')
       ax.legend()
 
@@ -402,9 +384,6 @@ class LanguageWorkflow(Workflow):
 
     return feed_dict
 
-  # def run(self, num_batches, evaluate, train=True):
-  #   super(LanguageWorkflow, self).run(num_batches, evaluate, train)
-
   def _write_perplexity_summary(self, batch_type, batch, perplexity):
     """Create off-graph TensorBoard value summaries, and write events to disk."""
     summary = tf.Summary()
@@ -414,6 +393,7 @@ class LanguageWorkflow(Workflow):
     self._writer.flush()
 
   def helper_evaluate(self, batch):
+    """Evaluation method."""
 
     logging.info('Evaluate starting...')
     self._loss_sum = 0.0
@@ -439,8 +419,7 @@ class LanguageWorkflow(Workflow):
       if do_print:
         global_step = test_batch
         logging.info('Test batch %d of %d, global step: %d', global_step, num_testing_batches, batch)
-      #print( "Test batch ", batch + test_batch)
-      #self.testing(testing_handle, global_step)
+
       self.testing(testing_handle, test_batch)
 
     if self._hparams.predictor_optimize == 'accuracy':

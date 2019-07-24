@@ -1,4 +1,4 @@
-# Copyright (C) 2018 Project AGI
+# Copyright (C) 2019 Project AGI
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -16,10 +16,8 @@
 """MNISTMovingDataset class."""
 
 import os
-import re
 import logging
 import random
-import struct
 
 import numpy as np
 import tensorflow as tf
@@ -34,24 +32,26 @@ class MNISTMovingDataset(Dataset):  # pylint: disable=W0223
 
   def __init__(self, directory):
     super(MNISTMovingDataset, self).__init__(
-      name='mnist_moving',
-      directory=directory,
-      dataset_shape=[-1, 64, 64, 1],
-      train_size=60000,
-      test_size=10000,
-      num_train_classes=10,
-      num_test_classes=10,
-      num_classes=10)
+        name='mnist_moving',
+        directory=directory,
+        dataset_shape=[-1, 64, 64, 1],
+        train_size=60000,
+        test_size=10000,
+        num_train_classes=10,
+        num_test_classes=10,
+        num_classes=10)
 
     self._batch_size = None
     self.num_frames = None
 
   def get_train(self, preprocess=False, options=None):  # pylint: disable=W0221
     """tf.data.Dataset object for MNIST training data."""
+    del options
     return self._dataset(self._directory, 'train-120k.npz', preprocess)
 
   def get_test(self, preprocess=False, options=None):  # pylint: disable=W0221
     """tf.data.Dataset object for MNIST test data."""
+    del options
     return self._dataset(self._directory, 'test-10k.npz', preprocess)
 
   def set_batch_size(self, batch_size):
@@ -74,6 +74,7 @@ class MNISTMovingDataset(Dataset):  # pylint: disable=W0223
 
   def _dataset(self, directory, filename, preprocess):
     """Download and parse the dataset."""
+    del preprocess
 
     dirpath = os.path.join(directory, self.name)
     filepath = os.path.join(dirpath, filename)
@@ -123,10 +124,8 @@ class MNISTMovingDataset(Dataset):  # pylint: disable=W0223
 
     dataset = tf.data.Dataset.from_generator(generator, output_types=(tf.float32, tf.int32, tf.int32),
                                              output_shapes=(
-                                                  tf.TensorShape([self.IMAGE_DIM, self.IMAGE_DIM, 1]),
-                                                  tf.TensorShape([]),
-                                                  tf.TensorShape([])))
+                                                 tf.TensorShape([self.IMAGE_DIM, self.IMAGE_DIM, 1]),
+                                                 tf.TensorShape([]),
+                                                 tf.TensorShape([])))
 
     return dataset
-
-

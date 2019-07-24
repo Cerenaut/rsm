@@ -1,4 +1,4 @@
-# Copyright (C) 2018 Project AGI
+# Copyright (C) 2019 Project AGI
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -19,27 +19,18 @@ from __future__ import absolute_import
 from __future__ import division
 from __future__ import print_function
 
-import ast
-import json
-import os
 import re
 
-import mlflow
 import tensorflow as tf
 
-import numpy as np
-import matplotlib.pyplot as plt
+from bs4 import BeautifulSoup
 
-from pagi.utils import logger_utils
-from pagi.utils import generic_utils as util
 from pagi.utils.embedding import Embedding
-
-from bs4 import BeautifulSoup, SoupStrainer
 
 
 def main(args):
 
-  print( "Args: ", args)
+  print("Args:", args)
 
   # data_dir = '/home/dave/agi/ptb_err'
   # count_file = 'error_count.csv'
@@ -73,12 +64,13 @@ def main(args):
   soup = BeautifulSoup(data_replaced)
   articles = soup.findAll(tag) # find all body tags
   print('Have ', len(articles), ' articles.')  # print number of body tags in sgm file
-  i=0
+  i = 0
   corpus = ''
 
-  for article in articles:         #loop through each body tag and print its content 
+  # Loop through each body tag and print its content
+  for article in articles:  # pylint: disable=too-many-nested-blocks
     content = article.contents
-    if i<10:
+    if i < 10:
       print('Article: ', content)
       print('| ')
 
@@ -133,7 +125,7 @@ def main(args):
         pass
 
       # https://stackoverflow.com/questions/5917082/regular-expression-to-match-numbers-with-or-without-commas-and-decimals-in-text
-      is_number = re.search('(?<!\S)(?=.)(0|([1-9](\d*|\d{0,2}(,\d{3})*)))?(\.\d*[1-9])?(?!\S)', token)
+      is_number = re.search('(?<!\S)(?=.)(0|([1-9](\d*|\d{0,2}(,\d{3})*)))?(\.\d*[1-9])?(?!\S)', token)  # pylint: disable=anomalous-backslash-in-string
       if is_number:
         token = number_token
 
@@ -176,19 +168,20 @@ def main(args):
         for k in range(output_length):
           if k > 0:
             output_token_1 = output_list[k-1]
-            output_token_2 = output_list[k  ]
+            output_token_2 = output_list[k]
 
             # N $ --> $ N
             if (output_token_1 == 'N') and (output_token_2 == '$'):
               output_list[k-1] = '$'
-              output_list[k  ] = 'N'
+              output_list[k] = 'N'
             elif k > 1:
               output_token_0 = output_list[k-2]
 
-              if (output_token_0 == 'N') and ((output_token_1 == 'million') or (output_token_1 == 'billion') or (output_token_1 == 'trillion')) and (output_token_2 == '$'):
+              if output_token_0 == 'N' and output_token_1 in ['million', 'billion', 'trillion'] and (
+                  output_token_2 == '$'):
                 output_list[k-2] = '$'
                 output_list[k-1] = 'N'
-                output_list[k  ] = output_token_1
+                output_list[k] = output_token_1
 
         # Copy the final list to the output buffer
         for k in range(output_length):
@@ -201,13 +194,13 @@ def main(args):
         # Clear the token list
         output_list = []  # reset list
 
-    if i<10:
+    if i < 10:
       print('ArticTx: ', output)
       print('--------------\n\n')
 
     # assemble the final corpus line, add newline at end
     corpus = corpus + output
-    i=i+1
+    i = i + 1
 
   print('Articles: ', i)
 
