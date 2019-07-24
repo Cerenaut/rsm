@@ -6,4 +6,4 @@ The codebase for the Recurrent Sparse Memory (RSM) project.
 
 ## Getting Started
 Ensure that you have `pagi` installed and that its accessible via the command-line by running `pagi --help`. Clone this
-repository and install the package using `pip install -e .`.
+repository and install the package using `pip install -e .`
