@@ -106,7 +106,7 @@ class SparseConvAutoencoderStack(CompositeComponent):
             try:
               hparam_value = hparams_dict[key][i]
             except IndexError:
-              hparam_value = hparams_dict[key][i -1]
+              hparam_value = hparams_dict[key][0]
 
           layer_hparams.set_hparam(key, hparam_value)
 
