@@ -137,6 +137,7 @@ class SparseConvAutoencoderStack(CompositeComponent):
       layer_input_values = output_encoding
 
       if self._hparams.sum_norm[i] != -1 and self._hparams.sum_norm[i] > 0:
+        logging.info('Using sum norm at layer %s with k=%s', i, self._hparams.sum_norm)
         layer_input_values = tf_utils.tf_normalize_to_k(layer_input_values, k=self._hparams.sum_norm[i], axis=[1, 2, 3])
 
       layer_input_shape = layer_input_values.shape.as_list()
