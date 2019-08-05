@@ -59,8 +59,8 @@ class SparseConvAutoencoderStack(CompositeComponent):
   def get_output(self):
     return self.get_sub_component('output').get_encoding()
 
-  def use_sum_norm(self):
-    return self._hparams.sum_norm[i] != -1 and self._hparams.sum_norm[i] > 0
+  def use_sum_norm(self, layer_idx):
+    return self._hparams.sum_norm[layer_idx] != -1 and self._hparams.sum_norm[layer_idx] > 0
 
   def build(self, input_values, input_shape, hparams, name='component', encoding_shape=None):
     """Initializes the model parameters.
@@ -139,7 +139,7 @@ class SparseConvAutoencoderStack(CompositeComponent):
       output_encoding = layer.get_encoding_op() # 4d, protected with StopGradient
       layer_input_values = output_encoding
 
-      if self.use_sum_norm():
+      if self.use_sum_norm(i):
         logging.info('Using sum norm at layer %s with k=%s', i, self._hparams.sum_norm)
         layer_input_values = tf_utils.tf_normalize_to_k(layer_input_values, k=self._hparams.sum_norm[i], axis=[1, 2, 3])
 
