@@ -41,10 +41,13 @@ class CompositeVideoWorkflow(CompositeWorkflow, VideoWorkflow):
 
   def _do_batch_after_hook(self, global_step, batch_type, fetched, feed_dict):
     if CompositeRSMStack.ae_name in self._component.get_sub_components().keys():
-      # Get the decoding from the final layer in the AE Stack
-      ae_output = self._component.get_sub_component(CompositeRSMStack.ae_name).get_output()
+      sub_components = self._component.get_sub_component(CompositeRSMStack.ae_name).get_sub_components()
 
-      self._decoder(global_step, CompositeRSMStack.ae_name, CompositeRSMStack.ae_name, ae_output, feed_dict)
+      for i, (name, sub_component) in enumerate(sub_components.items()):
+        # Skip the first layer; we already have its reconstruction
+        if i == 0:
+          continue
+        self._decoder(global_step, name, CompositeRSMStack.ae_name, sub_component.get_encoding(), feed_dict)
 
     if CompositeRSMStack.rsm_name in self._component.get_sub_components().keys():
       super()._do_batch_after_hook(global_step, batch_type, fetched, feed_dict)
