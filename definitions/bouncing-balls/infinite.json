@@ -3,16 +3,16 @@
     "workflow": "rsm.workflows.moving_mnist_workflow",
     "dataset": "rsm.datasets.bouncing_balls_dataset",
     "component": "rsm.components.sequence_memory_stack",
-    "batches": 500000,
+    "batches": 10,
 
     "hparams_override": {
       "num_layers": 1,
-      "batch_size": 300,
+      "batch_size": 32,
 
       "loss_type": "mse",
 
       "memory_training_interval": [0, -1],
-      "memory_summarize_input": false,
+      "memory_summarize_input": true,
       "memory_summarize_encoding": false,
       "memory_summarize_decoding": true,
       "memory_summarize_weights": false,
@@ -35,9 +35,9 @@
       "feedback_keep_rate": [0.5],
       "feedback_norm": [true],
 
-      "filters_field_width": [64],
-      "filters_field_height": [64],
-      "filters_field_stride": [64],
+      "filters_field_width": [30],
+      "filters_field_height": [30],
+      "filters_field_stride": [30],
 
       "lifetime_sparsity_cols": false,
       "lifetime_sparsity_dends": false
@@ -45,14 +45,14 @@
   },
   "workflow-options": {
     "train": true,
-    "evaluate": true,
+    "evaluate": false,
     "summarize": true,
 
     "prime": true,
     "prime_num_frames": 10,
     "num_testing_batches": 666,
 
-    "frame_padding_size": 3,
+    "frame_padding_size": 0,
     "frame_padding_value": -1
   }
 }

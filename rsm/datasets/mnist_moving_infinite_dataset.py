@@ -26,7 +26,7 @@ from PIL import Image
 import numpy as np
 import tensorflow as tf
 
-from datasets.mnist_moving_dataset import MNISTMovingDataset
+from rsm.datasets.mnist_moving_dataset import MNISTMovingDataset
 
 
 class MNISTMovingInfiniteDataset(MNISTMovingDataset):  # pylint: disable=W0223
@@ -133,7 +133,7 @@ class MNISTMovingInfiniteDataset(MNISTMovingDataset):  # pylint: disable=W0223
 
     return data
 
-  def _init_sequences(self, training, batch_size):
+  def _init_sequences(self, training, batch_size):  # pylint: disable=arguments-differ
     """Initialise the first N (=batch_size) sequences with some offset."""
     sequences = []
     states = []
@@ -149,7 +149,7 @@ class MNISTMovingInfiniteDataset(MNISTMovingDataset):  # pylint: disable=W0223
       states.append(sequence_states)
     return sequences, states
 
-  def _get_sequence(self, training):
+  def _get_sequence(self, training):  # pylint: disable=arguments-differ
     """Sample a sequence from the training or test set."""
     if training:
       sequence = self._get_train_sequence()
@@ -229,7 +229,7 @@ class MNISTMovingInfiniteDataset(MNISTMovingDataset):  # pylint: disable=W0223
     self._next_idx = (self._next_idx + 1) % self._frames.shape[0]
     return sequence
 
-  def _dataset(self, training, options=None):
+  def _dataset(self, training, options=None): # pylint: disable=arguments-differ
     """Download and parse the dataset."""
 
     self.num_frames = 20
