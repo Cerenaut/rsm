@@ -122,6 +122,7 @@ class SequenceMemoryStack(SummaryComponent):
         freq_min=0.05, # used by lifetime sparsity mask
 
         hidden_nonlinearity='tanh', # used for hidden layer only
+        decode_nonlinearity=['none'], # Used for decoding
 
         inhibition_decay=[0.1],  # controls refractory period
         feedback_decay_rate=[0.0],  # Optional integrated/exp decay feedback
@@ -130,8 +131,10 @@ class SequenceMemoryStack(SummaryComponent):
 
         # Sparse parameters:
         sparsity=[25],
-        lifetime_sparsity_dends=True,
-        lifetime_sparsity_cols=True
+        lifetime_sparsity_dends=False,
+        lifetime_sparsity_cols=False,
+
+        summarize_distributions=False
     )
 
   def update_statistics(self, session):  # pylint: disable=W0613
@@ -283,9 +286,10 @@ class SequenceMemoryStack(SummaryComponent):
     num_classes = self._label_shape[-1]
 
     if self._hparams.decode_mass > 0.0:
-      decode_logits = self._build_decode_prediction()
-      decode_distribution = tf.nn.softmax(logits=decode_logits)  # softmax on last dim
-      distributions.append(decode_distribution)
+      decode_distribution = self._build_decode_prediction()
+      decode_sum = tf.reduce_sum(decode_distribution, axis=1, keepdims=True)# + eps
+      decode_norm = decode_distribution / decode_sum
+      distributions.append(decode_norm)
       distribution_mass.append(self._hparams.decode_mass)
 
     if self._hparams.input_mass > 0.0:
@@ -478,6 +482,7 @@ class SequenceMemoryStack(SummaryComponent):
       layer_hparams.predictor_norm_input = self._hparams.predictor_norm_input
       layer_hparams.predictor_integrate_input = self._hparams.predictor_integrate_input
 
+      layer_hparams.decode_nonlinearity = self._hparams.decode_nonlinearity[i]
       layer_hparams.inhibition_decay = self._hparams.inhibition_decay[i]
       layer_hparams.feedback_decay_rate = self._hparams.feedback_decay_rate[i]
       layer_hparams.feedback_keep_rate = self._hparams.feedback_keep_rate[i]
@@ -721,4 +726,28 @@ class SequenceMemoryStack(SummaryComponent):
     super().build_summaries(batch_types, max_outputs, scope)
 
   def _build_summaries(self, batch_type, max_outputs=3):
-    pass
+
+    # Ensemble interpolation
+    summaries = []
+
+    if self._hparams.summarize_distributions:
+      ensemble_perplexity = self._dual.get_op(self.ensemble_perplexity)
+      ensemble_cross_entropy_sum = self._dual.get_op(self.ensemble_loss_sum)
+      #ensemble_top_1 = self._dual.get_op(self.ensemble_top_1)
+
+      summaries.append(tf.summary.scalar('mean_perplexity', tf.reduce_mean(ensemble_perplexity)))
+      summaries.append(tf.summary.scalar(self.ensemble_loss_sum, ensemble_cross_entropy_sum))
+      #summaries.append(tf.summary.scalar(self.ensemble_top_1, ensemble_top_1))
+
+      ensemble_distribution = self._dual.get_op(self.ensemble_distribution)
+      #ensemble_distribution = tf.Print(ensemble_distribution, [ensemble_distribution], 'DIST ', summarize=48)
+      ensemble_shape = ensemble_distribution.get_shape().as_list()
+      ensemble_shape_4d = [ensemble_shape[0],1,ensemble_shape[1],1]
+      #print('>>>>>', ensemble_shape_4d)
+      ensemble_distribution_reshape = tf.reshape(ensemble_distribution, ensemble_shape_4d)
+      p_summary_op = tf.summary.image(self.ensemble_distribution, ensemble_distribution_reshape, max_outputs=max_outputs)
+      summaries.append(p_summary_op)
+
+    if len(summaries) == 0:
+      return None
+    return summaries
