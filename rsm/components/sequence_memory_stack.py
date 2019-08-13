@@ -116,6 +116,11 @@ class SequenceMemoryStack(SummaryComponent):
         predictor_integrate_input=False,
         predictor_norm_input=True,
 
+        # Regularization, 0=Off
+        l2_f=[0.0],
+        l2_r=[0.0],
+        l2_b=[0.0],
+
         # Control statistics
         freq_update_interval=10,
         freq_learning_rate=0.1,
@@ -481,6 +486,10 @@ class SequenceMemoryStack(SummaryComponent):
 
       layer_hparams.predictor_norm_input = self._hparams.predictor_norm_input
       layer_hparams.predictor_integrate_input = self._hparams.predictor_integrate_input
+
+      layer_hparams.l2_f = self._hparams.l2_f[i]
+      layer_hparams.l2_r = self._hparams.l2_r[i]
+      layer_hparams.l2_b = self._hparams.l2_b[i]
 
       layer_hparams.decode_nonlinearity = self._hparams.decode_nonlinearity[i]
       layer_hparams.inhibition_decay = self._hparams.inhibition_decay[i]

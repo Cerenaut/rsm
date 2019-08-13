@@ -96,6 +96,11 @@ class SequenceMemoryLayer(SummaryComponent):
         fb_bias=False,
         decode_bias=True,
 
+        # Regularization, 0=Off
+        l2_f=0.0,
+        l2_r=0.0,
+        l2_b=0.0,
+
         # Initialization
         f_sd=0.03,
         r_sd=0.03,
@@ -350,6 +355,13 @@ class SequenceMemoryLayer(SummaryComponent):
     self._hparams = hparams
     self._freq_update_count = 0
     self._training_batch_count = 0
+
+    self._weights_f = None
+    self._bias_f = None
+    self._weights_r = None
+    self._bias_r = None
+    self._weights_b = None
+    self._bias_b = None
 
     self._input_shape = input_shape
     self._input_values = input_values
@@ -681,7 +693,7 @@ class SequenceMemoryLayer(SummaryComponent):
     add_bias = self._hparams.fb_bias
     initial_sd = self._hparams.b_sd  # Not previously defined
     scope = 'feedback'
-    convolved, self._weights_r, self._bias_r = self._build_conv_encoding(input_shape, input_tensor, field_stride,
+    convolved, self._weights_b, self._bias_b = self._build_conv_encoding(input_shape, input_tensor, field_stride,
                                                                          field_height, field_width, output_depth,
                                                                          add_bias, initial_sd, scope)
     return convolved
@@ -936,6 +948,27 @@ class SequenceMemoryLayer(SummaryComponent):
 
     return decoding_transfer_reshape, decoding_logits_reshape
 
+  def _build_l2_loss(self, w, b, scale, other_losses):
+    if scale <= 0.0:
+      return other_losses
+
+    logging.info('Adding L2 loss: ' + str(scale))
+    l2_loss_w = tf.nn.l2_loss(w)
+    l2_loss_b = tf.nn.l2_loss(b)
+    l2_loss = tf.reduce_sum(l2_loss_w) + tf.reduce_sum(l2_loss_b)
+    l2_loss_scaled = l2_loss * scale
+
+    all_losses = other_losses + l2_loss_scaled
+    return all_losses
+
+  def _build_extra_losses(self):
+    """Defines some extra criteria to optimize - in this case regularization"""
+    l2_losses = None
+    l2_losses = self._build_l2_loss(self._weights_f, self._bias_f, self._hparams.l2_f, l2_losses )
+    l2_losses = self._build_l2_loss(self._weights_r, self._bias_r, self._hparams.l2_r, l2_losses )
+    l2_losses = self._build_l2_loss(self._weights_b, self._bias_b, self._hparams.l2_b, l2_losses )
+    return l2_losses
+
   def _build_optimizer(self):
     """Setup the training operations"""
     target = self._input_values
@@ -943,10 +976,18 @@ class SequenceMemoryLayer(SummaryComponent):
     prediction_logits = self.get_op(self.decoding_logits)
     with tf.variable_scope('optimizer', reuse=tf.AUTO_REUSE):
       self._optimizer = tf_create_optimizer(self._hparams)
-      loss_op_1 = self._build_loss_fn(target, prediction, prediction_logits)
-      self._dual.set_op(self.loss, loss_op_1)
-      training_op = self._optimizer.minimize(loss_op_1, global_step=tf.train.get_or_create_global_step(),
-                                             name='training_op')
+
+      prediction_loss_op = self._build_loss_fn(target, prediction, prediction_logits)
+      extra_loss_op = self._build_extra_losses()  # e.g. regularization
+      loss_op = prediction_loss_op
+      if extra_loss_op is not None:
+        all_losses = []
+        all_losses.append(prediction_loss_op)
+        all_losses.append(extra_loss_op)
+        loss_op = tf.add_n(all_losses)
+      self._dual.set_op(self.loss, loss_op)
+
+      training_op = self._optimizer.minimize(loss_op, global_step=tf.train.get_or_create_global_step(), name='training_op')
       self._dual.set_op(self.training, training_op)
 
   def _build_loss_fn(self, target, output, output_logits=None):

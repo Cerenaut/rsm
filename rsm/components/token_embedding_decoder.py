@@ -40,11 +40,11 @@ class TokenEmbeddingDecoder(DualComponent):
     token_vectors = embedding.get_tokens_values()  # [t,h,w]
     token_vectors_shape = token_vectors.shape
 
-    np.set_printoptions(threshold=np.nan)
-    print('> token vectors shape: ', token_vectors.shape)
-    print('> prediction shape: ', prediction.shape)
-    print('> token vectors: ', token_vectors)
-        
+    # np.set_printoptions(threshold=np.nan)
+    # print('> token vectors shape: ', token_vectors.shape)
+    # print('> prediction shape: ', prediction.shape)
+    # print('> token vectors: ', token_vectors)
+
     # [t,h,w] where h = num trees and w = num decisions
     token_vectors_3d_pl = self._dual.add(self.embedding, shape=token_vectors_shape, default_value=0.0).add_pl()
     self._dual.set_values(self.embedding, token_vectors)
