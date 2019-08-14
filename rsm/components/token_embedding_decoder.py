@@ -31,8 +31,22 @@ class TokenEmbeddingDecoder(DualComponent):
     super().__init__(name)
 
     self._dataset = dataset
+    self._mode = 'one-hot'
+    #self._mode = 'btree'
 
   def build(self, prediction):
+    if self._mode == 'one-hot':
+      return self._build_one_hot(prediction)
+    elif self._mode == 'btree':
+      return self._build_btree(prediction)
+
+  def _build_one_hot(self, prediction):
+    return prediction
+    # prediction_vectors_3d = tf.reduce_sum(prediction, axis=3)  # [b,h,w,1] -> [b,h,w]
+    # prediction_vectors_2d = tf.reduce_sum(prediction_vectors_3d, axis=1)  # [b,h,w] -> [b,w]
+    # return prediction_vectors_2d  # Already softmaxed
+
+  def _build_btree(self, prediction):
     """Generate a prediction distribution over all tokens, for each batch sample."""
 
     # Load the embedding values once
@@ -83,5 +97,8 @@ class TokenEmbeddingDecoder(DualComponent):
   def update_feed_dict(self, feed_dict, batch_type='training'):
     del batch_type
 
-    names = [self.embedding]
-    self._dual.update_feed_dict(feed_dict, names)
+    if self._mode == 'one-hot':
+      pass
+    elif self._mode == 'btree':
+      names = [self.embedding]
+      self._dual.update_feed_dict(feed_dict, names)

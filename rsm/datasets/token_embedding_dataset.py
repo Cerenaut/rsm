@@ -103,7 +103,7 @@ class TokenEmbeddingDataset(Dataset):  # pylint: disable=W0223
     e = Embedding()
     e.read_tokens(token_file, token_delimiter)
     e.read_tokens_values(tokens_values_file)
-    e.check()
+    #e.check()
     return e
 
   def setup(self, batch_size, random_offsets, max_sequence_length, 
@@ -126,21 +126,6 @@ class TokenEmbeddingDataset(Dataset):  # pylint: disable=W0223
     self._batch_size = int(batch_size)
     self._max_sequence_length = int(max_sequence_length)
     self._random_offsets = random_offsets
-
-    # print('OK---------------------------------------')
-    # token_file = '/home/dave/dev/rl/memory/ptb.tokens.txt'
-    # tokens_values_file = '/home/dave/dev/rl/memory/ptb.token_paths.npy'
-    # token_delimiter = ','
-    # e = Embedding()
-    # e.read_tokens(token_file, token_delimiter)
-    # e.read_tokens_values(tokens_values_file)
-    # num_tokens = e.get_num_tokens()
-    # print(' have ', num_tokens, 'tokens')
-    # print('TOKENS: ', e.get_tokens())
-    # token_values_shape = e.get_token_value_shape()
-    # print('Shape: ', token_values_shape)
-    # print('All values: ', e.get_tokens_values().shape)
-    # print('OK---------------------------------------')
 
     # Create the embedding
     self._embedding = self.create_embedding(token_file, embedding_file, token_delimiter)
@@ -237,27 +222,29 @@ class TokenEmbeddingDataset(Dataset):  # pylint: disable=W0223
 
           z = z + 1  # Increase length
           i = i +1  # NEXT index.
-          mask = 1.0  # keep
+          mask = 1.0  # keep history
 
           # Wrap @ fixed length smaller than the dataset
           # Or if we've watche a sequence of defined length
-          # if z >= max_sequence_length:
-          #   z = 0
-          #   if random_offsets:
-          #     print('random offsets')
-          #     i = get_random_index(num_words)
-          #   else:
-          #     print('zero offsets')
-          #     i = 0
-          #   mask = 0.0  # clear
+          if z >= max_sequence_length:
+            #print('max len')
+            z = 0
+            if random_offsets:
+              #print('random offsets')
+              i = get_random_index(num_words)
+            else:
+              #print('zero offsets')
+              i = 0
+            mask = 0.0  # clear history
 
           # Wrap @ end of corpus
           if i >= num_words:
-            print('wrap offsets')
+            #print('wrap offsets')
             #z = 0 don't truncate the sequence counter
             i = 0  # Wrap to start
-            mask = 0.0  # clear
+            mask = 0.0  # clear history
 
+          # Useful debugging info, but very verbose:
           #logging.info('Dataset subset: %s batch %d mask: %f offset: %s len: %d of %d', subset_key, b, mask, i, z, num_words)
 
           sequence_offsets[b] = i

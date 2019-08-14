@@ -200,9 +200,10 @@ class LanguageWorkflow(Workflow):
     # No effect if P=0
     self._component.forget_history(self._session, stochastic_forgetting_probability)
 
+    # Option to let dataset decide when to clear
     # History update with per-batch-sample flag for whether to clear
-    update_history = False
-    if update_history:
+    max_sequence_length = self._opts['max_sequence_length']
+    if max_sequence_length > 0:
       subset = self._dataset.get_subset(data_subset)
       history_mask = subset['mask']
       self._component.update_history(self._session, history_mask)
@@ -386,7 +387,7 @@ class LanguageWorkflow(Workflow):
   def _write_perplexity_summary(self, batch_type, batch, perplexity):
     """Create off-graph TensorBoard value summaries, and write events to disk."""
     summary = tf.Summary()
-    summary.value.add(tag=self._component.name + '/summaries/' + batch_type + '/test_state_perplexity',
+    summary.value.add(tag=self._component.name + '/summaries/' + batch_type + '/average_perplexity',
                       simple_value=perplexity)
     self._writer.add_summary(summary, batch)
     self._writer.flush()

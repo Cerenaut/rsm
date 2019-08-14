@@ -83,7 +83,8 @@ class SequenceMemoryStack(SummaryComponent):
         layer_mass=1.0,  # Default to only use layer
         ensemble_norm_eps=0.0000000001,  # 0.0001%
 
-        autoencode=False,
+        mode = 'predict-input',
+        #autoencode=False,
 
         # Memory options
         memory_summarize_input=False,
@@ -228,7 +229,7 @@ class SequenceMemoryStack(SummaryComponent):
 
     with tf.variable_scope(self.name, reuse=tf.AUTO_REUSE):
 
-      self._build_layers(input_values, input_shape)
+      self._build_layers(input_values, input_shape, label_values, label_shape)
 
       # Predictor may be asked to generate a target image rather than a classification
       predictor_target_values = input_values
@@ -291,10 +292,13 @@ class SequenceMemoryStack(SummaryComponent):
     num_classes = self._label_shape[-1]
 
     if self._hparams.decode_mass > 0.0:
+      print('decoding...')
       decode_distribution = self._build_decode_prediction()
-      decode_sum = tf.reduce_sum(decode_distribution, axis=1, keepdims=True)# + eps
-      decode_norm = decode_distribution / decode_sum
-      distributions.append(decode_norm)
+      print('one hot', decode_distribution)
+      # decode_sum = tf.reduce_sum(decode_distribution, axis=1, keepdims=True)# + eps
+      # decode_norm = decode_distribution / decode_sum
+      # distributions.append(decode_norm)
+      distributions.append(decode_distribution)
       distribution_mass.append(self._hparams.decode_mass)
 
     if self._hparams.input_mass > 0.0:
@@ -414,7 +418,7 @@ class SequenceMemoryStack(SummaryComponent):
     prediction_input_shape = prediction_layer.get_shape(SequenceMemoryLayer.previous)
     return prediction_input, prediction_input_shape
 
-  def _build_layers(self, input_values, input_shape):
+  def _build_layers(self, input_values, input_shape, label_values, label_shape):
     """Build the RSM layers."""
     logging.info('Building layers...')
     self._layers = []
@@ -443,7 +447,8 @@ class SequenceMemoryStack(SummaryComponent):
       layer_hparams.momentum = self._hparams.momentum
       layer_hparams.momentum_nesterov = self._hparams.momentum_nesterov
 
-      layer_hparams.autoencode = self._hparams.autoencode
+      layer_hparams.mode = self._hparams.mode
+      #layer_hparams.autoencode = self._hparams.autoencode
 
       layer_hparams.summarize_input = self._hparams.memory_summarize_input
       layer_hparams.summarize_encoding = self._hparams.memory_summarize_encoding
@@ -542,7 +547,7 @@ class SequenceMemoryStack(SummaryComponent):
 
 
       layer.build(layer_input_values, layer_input_shape, layer_hparams, name=layer_name, encoding_shape=None,
-                  feedback_shape=layer_feedback_shape)
+                  feedback_shape=layer_feedback_shape, target_shape=label_shape, target_values=label_values)
 
       self._layers.append(layer)
 

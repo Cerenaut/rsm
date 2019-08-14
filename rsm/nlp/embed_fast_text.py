@@ -6,24 +6,26 @@ import matplotlib.pyplot as plt
 import pandas as pd
 import scipy.cluster.hierarchy as shc
 
-all_tokens_file = 'ptb.tokens.txt'
-all_token_paths_file = 'ptb.token_paths'
-#corpus = '/home/dave/agi/penn-treebank/simple-examples/data/ptb.train.txt'
-corpus = '/home/dave/agi/penn-treebank/simple-examples/data/ptb.train-short.txt'
+all_tokens_file = 'ptb_dense_10k.tokens.txt'
+all_token_paths_file = 'ptb_dense_10k.token_paths'
+corpus = '/home/dave/agi/penn-treebank/simple-examples/data/ptb.train.txt'
+#corpus = '/home/dave/agi/penn-treebank/simple-examples/data/ptb.train-short.txt'
 eos = '<end>'
 load = False
-show = True
+show = False
+btree = False  # Whether to use a binary-tree encoding
 #dense_test_words = ['company', 'increases', 'production']
 dense_test_words = []
 preprocess = True
 preprocessed_corpus = 'postproc.txt'
 truncate = False
 truncate_size = 100
+model_size = 100
 
 base_params = {
   'filename':'model.bin',
   'type':'skipgram',  # or cbow
-  'size':50
+  'size':model_size
 }
 
 model_params = [
@@ -226,102 +228,109 @@ def find_path(tree, num_tokens, token_id, cluster_id, path):
   #print('Not found.')
   return None
 
-sys.setrecursionlimit(10000)
-max_tree_depth = 0
+vector_size = model_size
+vector_key = 'token_vectors'
 
-for m in range(0, num_models):
-  print('Clustering model ', m)
-  model_data = models[m]
-  tokens = model_data['tokens']
-  token_vectors = model_data['token_vectors']
-  num_tokens = model_data['num_tokens']
+if btree:
+  sys.setrecursionlimit(10000)
+  max_tree_depth = 0
 
-  # Cluster the token vectors
-  tree = shc.linkage(token_vectors, method='ward')
+  for m in range(0, num_models):
+    print('Clustering model ', m)
+    model_data = models[m]
+    tokens = model_data['tokens']
+    token_vectors = model_data['token_vectors']
+    num_tokens = model_data['num_tokens']
 
-  if show:
-    plt.figure(figsize=(10, 7))
-    plt.title('Binary word-tree')
-    dend = shc.dendrogram(tree, labels=tokens)
-    plt.show()
+    # Cluster the token vectors
+    tree = shc.linkage(token_vectors, method='ward')
 
-  #https://stackoverflow.com/questions/9838861/scipy-linkage-format
-  #print('Linkage: ', lnk)
+    if show:
+      plt.figure(figsize=(10, 7))
+      plt.title('Binary word-tree')
+      dend = shc.dendrogram(tree, labels=tokens)
+      plt.show()
 
-  # Next step - convert linkage to tree-paths matrix
-  #"A (n-1) by 4 matrix Z is returned. At the i-th iteration, clusters with indices
-  # Z[i, 0] and Z[i, 1] are combined to form cluster n + i. A cluster with an index 
-  # less than n corresponds to one of the original observations. The distance between 
-  # clusters Z[i, 0] and Z[i, 1] is given by Z[i, 2]. The fourth value Z[i, 3] represents
-  # the number of original observations in the newly formed cluster."
-  #     ?            ?             Dist         Obs in cluster
-  #  [[ 10.          29.           0.90266106   2.        ]
-  #  [  8.          59.           0.96037416   2.        ]
-  #  [  0.           4.           1.10519679   2.        ]
-  #  [  1.           2.           1.18796531   2.        ]
-  #  [ 12.          21.           1.21003461   2.        ]
-  #  [100.         103.           1.29104273   4.        ]
-  #  [ 63.          66.           1.2961218    2.        ]
-  #  [ 13.          93.           1.33565727   2.        ]
-  #  [ 23.          28.           1.33757345   2.        ]
-  # ...
-  # [183.         185.           3.86640589  15.        ]
-  # [162.         180.           4.00119524   6.        ]
-  # [161.         189.           4.01574254  33.        ]
-  # [188.         190.           4.19644353  46.        ]
-  # [179.         192.           4.39205466  39.        ]
-  # [187.         191.           5.05303151  11.        ]
-  # [193.         194.           5.43354232  85.        ]
-  # [178.         195.           5.48807551  15.        ]
-  # [196.         197.           7.74025727 100.        ]]
+    #https://stackoverflow.com/questions/9838861/scipy-linkage-format
+    #print('Linkage: ', lnk)
 
-  linkage_shape = tree.shape
-  #print('linkage shape: ', linkage_shape)
-  linkage_rows = linkage_shape[0]
+    # Next step - convert linkage to tree-paths matrix
+    #"A (n-1) by 4 matrix Z is returned. At the i-th iteration, clusters with indices
+    # Z[i, 0] and Z[i, 1] are combined to form cluster n + i. A cluster with an index 
+    # less than n corresponds to one of the original observations. The distance between 
+    # clusters Z[i, 0] and Z[i, 1] is given by Z[i, 2]. The fourth value Z[i, 3] represents
+    # the number of original observations in the newly formed cluster."
+    #     ?            ?             Dist         Obs in cluster
+    #  [[ 10.          29.           0.90266106   2.        ]
+    #  [  8.          59.           0.96037416   2.        ]
+    #  [  0.           4.           1.10519679   2.        ]
+    #  [  1.           2.           1.18796531   2.        ]
+    #  [ 12.          21.           1.21003461   2.        ]
+    #  [100.         103.           1.29104273   4.        ]
+    #  [ 63.          66.           1.2961218    2.        ]
+    #  [ 13.          93.           1.33565727   2.        ]
+    #  [ 23.          28.           1.33757345   2.        ]
+    # ...
+    # [183.         185.           3.86640589  15.        ]
+    # [162.         180.           4.00119524   6.        ]
+    # [161.         189.           4.01574254  33.        ]
+    # [188.         190.           4.19644353  46.        ]
+    # [179.         192.           4.39205466  39.        ]
+    # [187.         191.           5.05303151  11.        ]
+    # [193.         194.           5.43354232  85.        ]
+    # [178.         195.           5.48807551  15.        ]
+    # [196.         197.           7.74025727 100.        ]]
 
-  # Init clusters
-  num_clusters = linkage_rows
-  clusters = []  # cluster info
-  for j in range(0, num_clusters):
-    clusters.append({})
-    clusters[j]['depth'] = 0
+    linkage_shape = tree.shape
+    #print('linkage shape: ', linkage_shape)
+    linkage_rows = linkage_shape[0]
 
-  # Calc tree depth
-  max_depth = 0
-  for j in range(0, num_clusters):
-    #print('Calculate depth of cluster: ', j)
-    depth = find_depth(tree, clusters, num_tokens, j)
-    max_depth = max(depth, max_depth)
-    #print('Depth of cluster: ', j, ' is ', depth)
+    # Init clusters
+    num_clusters = linkage_rows
+    clusters = []  # cluster info
+    for j in range(0, num_clusters):
+      clusters.append({})
+      clusters[j]['depth'] = 0
 
-  # Build the decision tree paths for each token
-  token_paths = np.zeros([num_tokens, max_depth])
+    # Calc tree depth
+    max_depth = 0
+    for j in range(0, num_clusters):
+      #print('Calculate depth of cluster: ', j)
+      depth = find_depth(tree, clusters, num_tokens, j)
+      max_depth = max(depth, max_depth)
+      #print('Depth of cluster: ', j, ' is ', depth)
 
-  #for i in range(0, 3):
-  for i in range(0, num_tokens):
-    token = tokens[i]
-    j = num_clusters -1
-    path = find_path(tree, num_tokens, i, j, [])
-    #print('Path of word: ', i, ' which is ', token, ' is ', path)
-    path_length = len(path)
-    for k in range(0, path_length):
-      token_paths[i][k] = path[k]
+    # Build the decision tree paths for each token
+    token_paths = np.zeros([num_tokens, max_depth])
 
-  print('Max depth = ', max_depth)
-  model_data['tree_depth'] = max_depth
-  model_data['token_paths'] = token_paths
+    #for i in range(0, 3):
+    for i in range(0, num_tokens):
+      token = tokens[i]
+      j = num_clusters -1
+      path = find_path(tree, num_tokens, i, j, [])
+      #print('Path of word: ', i, ' which is ', token, ' is ', path)
+      path_length = len(path)
+      for k in range(0, path_length):
+        token_paths[i][k] = path[k]
 
-  max_tree_depth = max(max_tree_depth, max_depth)
+    print('Max depth = ', max_depth)
+    model_data['tree_depth'] = max_depth
+    model_data['token_paths'] = token_paths
+
+    max_tree_depth = max(max_tree_depth, max_depth)
+
+  model_size = max_tree_depth  # discovered above
+  vector_key = 'token_paths'
 
 all_tokens = None
-all_token_paths = np.zeros([num_tokens, num_models, max_tree_depth])
+all_token_paths = np.zeros([num_tokens, num_models, model_size])
 
 for m in range(0, num_models):
   print('Combining tree ', m)
   model_data = models[m]
   tokens = model_data['tokens']
   token_indices = model_data['token_indices']
-  token_paths = model_data['token_paths']
+  token_vectors = model_data[vector_key]
 
   if m == 0:
     all_tokens = tokens  # Copy from 1st model
@@ -329,17 +338,17 @@ for m in range(0, num_models):
   for t in range(0, num_tokens):
     token = all_tokens[t]  # Always use same token in
     index = token_indices[token]
-    path = token_paths[index]
-    path_length = len(path)
+    vector = token_vectors[index]
+    vector_length = len(vector)
 
-    for i in range(0, path_length):
-      all_token_paths[t][m][i] = path[i]
-    for i in range(path_length, max_tree_depth):
+    for i in range(0, vector_length):
+      all_token_paths[t][m][i] = vector[i]
+    for i in range(vector_length, model_size):
       all_token_paths[t][m][i] = 2
 
 # https://stackoverflow.com/questions/48230230/typeerror-mismatch-between-array-dtype-object-and-format-specifier-18e?rq=1
 np.set_printoptions(threshold=np.nan)
-print('Token paths: \n', all_token_paths)
+#print('Token paths: \n', all_token_paths)
 delimiter = ','
 np.savetxt(all_tokens_file, all_tokens, delimiter=delimiter, fmt='%s')
 np.save(all_token_paths_file, all_token_paths)
