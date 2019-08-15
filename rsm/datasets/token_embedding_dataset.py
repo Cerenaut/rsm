@@ -252,7 +252,10 @@ class TokenEmbeddingDataset(Dataset):  # pylint: disable=W0223
           reset_masks[b] = mask  # need to produce a mask for NEXT sample.
 
           values = self._embedding.get_token_values(token)  # 2d
-          values = np.minimum(values, 1.0)  # Force all 2s to 1s
+
+          # For btree embeddings:
+          #values = np.minimum(values, 1.0)  # Force all 2s to 1s
+
           #print('Token:', token)
           #print('Embedding:', values)
           values_3d = np.reshape(values, embedding_shape)
