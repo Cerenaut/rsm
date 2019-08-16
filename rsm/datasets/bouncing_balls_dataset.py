@@ -286,9 +286,9 @@ class BouncingBallsDataset(Dataset):  # pylint: disable=W0223
           if state == (sequences[b].shape[0] - 1):
             end_state = True
 
-          yield (frame, label, end_state)
+          yield (frame, label, state, end_state)
 
-    def preprocess(image, label, state):
+    def preprocess(image, label, state, end_state):
       padding_size = options['frame_padding_size']
 
       if padding_size > 0:
@@ -299,11 +299,12 @@ class BouncingBallsDataset(Dataset):  # pylint: disable=W0223
         image = tf.pad(image, paddings,
                        constant_values=options['frame_padding_value'])
 
-      return image, label, state
+      return image, label, state, end_state
 
-    dataset = tf.data.Dataset.from_generator(generator, output_types=(tf.float32, tf.int32, tf.bool),
+    dataset = tf.data.Dataset.from_generator(generator, output_types=(tf.float32, tf.int32, tf.int32, tf.bool),
                                              output_shapes=(
                                                  tf.TensorShape([self.IMAGE_DIM, self.IMAGE_DIM, 1]),
+                                                 tf.TensorShape([]),
                                                  tf.TensorShape([]),
                                                  tf.TensorShape([])))
     dataset = dataset.map(preprocess)

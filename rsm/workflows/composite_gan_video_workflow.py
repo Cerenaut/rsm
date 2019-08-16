@@ -19,8 +19,10 @@ from __future__ import absolute_import
 from __future__ import division
 from __future__ import print_function
 
+import numpy as np
 import tensorflow as tf
 
+from rsm.components.sequence_memory_layer import SequenceMemoryLayer
 from rsm.workflows.composite_video_workflow import CompositeVideoWorkflow
 from rsm.workflows.composite_gan_workflow import CompositeGANWorkflow
 
@@ -44,7 +46,7 @@ class CompositeGANVideoWorkflow(CompositeGANWorkflow, CompositeVideoWorkflow):
     return opts
 
   def _build_prior_fetches(self):
-    return {'inputs': self._inputs, 'states': self._states}
+    return {'inputs': self._inputs, 'states': self._states, 'end_states': self._end_states}
 
   def training(self, dataset_handle, global_step):  # pylint: disable=arguments-differ
     batch_type, fetched, feed_dict, data_subset = super().training(dataset_handle, global_step)
@@ -58,6 +60,8 @@ class CompositeGANVideoWorkflow(CompositeGANWorkflow, CompositeVideoWorkflow):
     """The training procedure within the batch loop"""
     fetches, feed_dict, fetched = super()._do_batch(fetches, feed_dict, batch_type, data_subset, global_step)
 
+    if 'end_states' in fetched:
+      self._end_states_vals = fetched['end_states']
     if 'states' in fetched:
       self._states_vals = fetched['states']
     if 'inputs' in fetched:
@@ -66,4 +70,19 @@ class CompositeGANVideoWorkflow(CompositeGANWorkflow, CompositeVideoWorkflow):
     return fetches, feed_dict, fetched
 
   def get_decoded_frame(self):
-    return self._component.get_sub_component('gan').get_output()
+    use_output = 'gan'
+
+    gan_output = self._component.get_sub_component('gan').get_output()
+    rsm_output = self._component.get_sub_component('rsm_stack').get_layer(0).get_values(SequenceMemoryLayer.decoding)
+
+    decoded_frame = gan_output
+    if use_output == 'rsm':
+      decoded_frame = rsm_output
+
+    # Normalize to [0, 1]
+    decoded_frame = (decoded_frame - np.min(decoded_frame)) / (np.max(decoded_frame) - np.min(decoded_frame))
+
+    assert np.min(decoded_frame) == 0.0
+    assert np.max(decoded_frame) == 1.0
+
+    return decoded_frame

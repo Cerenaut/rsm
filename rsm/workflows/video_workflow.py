@@ -102,7 +102,7 @@ class VideoWorkflow(ImageSequenceWorkflow):
           self._dataset_iterators['testing'] = test_dataset.make_initializable_iterator()
 
   def _init_iterators(self):
-    self._inputs, self._labels, self._states = self._iterator.get_next()
+    self._inputs, self._labels, self._states, self._end_states = self._iterator.get_next()
     self._sequence_length = self._dataset.num_frames
 
   def _setup_component(self):
@@ -175,6 +175,7 @@ class VideoWorkflow(ImageSequenceWorkflow):
 
         # Replace groundtruth with output decoding for the next step
         previous[b] = decoding[b]
+        # previous[b] = np.zeros_like(decoding[b])
         self.set_previous_frame(previous)
 
   def set_previous_frame(self, previous):
@@ -194,7 +195,7 @@ class VideoWorkflow(ImageSequenceWorkflow):
     }
 
     self._component.update_feed_dict(feed_dict, batch_type)
-    fetches = {'inputs': self._inputs, 'states': self._states}
+    fetches = {'inputs': self._inputs, 'states': self._states, 'end_states': self._end_states}
     self._component.add_fetches(fetches, batch_type)
 
     if self.do_profile():
@@ -206,6 +207,7 @@ class VideoWorkflow(ImageSequenceWorkflow):
 
     self._inputs_vals = fetched['inputs']
     self._states_vals = fetched['states']
+    self._end_states_vals = fetched['end_states']
 
     self._do_batch_after_hook(global_step, batch_type, fetched, feed_dict, data_subset)
 
@@ -232,7 +234,7 @@ class VideoWorkflow(ImageSequenceWorkflow):
     self._component.update_statistics(self._session)
 
     # Resets the history at end of a sequence
-    self._compute_end_state_mask(self._states_vals)
+    self._compute_end_state_mask(self._end_states_vals)
 
   def frames_to_video(self, input_frames, filename=None):
     """Convert given frames to video format, and export it to disk."""
