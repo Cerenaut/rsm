@@ -28,17 +28,6 @@ from rsm.components.composite_rsm_stack import CompositeRSMStack
 class CompositeVideoWorkflow(CompositeWorkflow, VideoWorkflow):
   """A composite variant of the video workflow."""
 
-  def _init_test_decodes(self):
-    if CompositeRSMStack.ae_name in self._component.get_sub_components().keys():
-      self._add_composite_decodes('ae_stack', 'ae_stack')
-
-    if CompositeRSMStack.rsm_name in self._component.get_sub_components().keys():
-      self._add_composite_decodes('rsm_stack', 'ae_stack')
-
-    self._num_repeats = len(self.TEST_DECODES)
-
-    return self.TEST_DECODES
-
   def _do_batch_after_hook(self, global_step, batch_type, fetched, feed_dict):
     if CompositeRSMStack.ae_name in self._component.get_sub_components().keys():
       sub_components = self._component.get_sub_component(CompositeRSMStack.ae_name).get_sub_components()
@@ -52,19 +41,20 @@ class CompositeVideoWorkflow(CompositeWorkflow, VideoWorkflow):
     if CompositeRSMStack.rsm_name in self._component.get_sub_components().keys():
       super()._do_batch_after_hook(global_step, batch_type, fetched, feed_dict)
 
-      rsm_output = self.get_decoded_frame()
-      self._decoder(global_step, CompositeRSMStack.rsm_name, CompositeRSMStack.ae_name,
-                    rsm_output, feed_dict)
+      if CompositeRSMStack.ae_name in self._component.get_sub_components().keys():
+        rsm_output = self.get_decoded_frame()
+        self._decoder(global_step, CompositeRSMStack.rsm_name, CompositeRSMStack.ae_name,
+                      rsm_output, feed_dict)
 
   def set_previous_frame(self, previous):
-    self._component.get_sub_component('output').get_layer(0).get_dual().set_values('previous', previous)
+    self._component.get_sub_component('rsm_stack').get_layer(0).get_dual().set_values('previous', previous)
 
   def get_decoded_frame(self):
-    return self._component.get_sub_component('output').get_layer(0).get_values(SequenceMemoryLayer.decoding)
+    return self._component.get_sub_component('rsm_stack').get_layer(0).get_values(SequenceMemoryLayer.decoding)
 
   def get_previous_frame(self):
-    return self._component.get_sub_component('output').get_layer(0).get_values(SequenceMemoryLayer.previous)
+    return self._component.get_sub_component('rsm_stack').get_layer(0).get_values(SequenceMemoryLayer.previous)
 
   def _get_status(self):
     """Return some string proxy for the losses or errors being optimized"""
-    return self._component.get_sub_component('output').get_loss()
+    return self._component.get_sub_component('rsm_stack').get_loss()

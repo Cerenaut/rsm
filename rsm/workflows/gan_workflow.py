@@ -19,8 +19,6 @@ from __future__ import absolute_import
 from __future__ import division
 from __future__ import print_function
 
-import logging
-
 import numpy as np
 import tensorflow as tf
 
@@ -37,10 +35,12 @@ class GANWorkflow(Workflow):
     # -------------------------------------------------------------------------
     self._component = self._component_type()
 
-    self.gen_input_shape = [self._hparams.batch_size, 1, 1, 100]
     self.real_input_shape = [self._hparams.batch_size] + self._dataset.shape[1:]
+    # self.gen_input_shape = self.real_input_shape
+    self.gen_input_shape = [self._hparams.batch_size, 1, 1, 100]
+    self.condition_shape = [self._hparams.batch_size, self._dataset.num_classes]
 
-    self._component.build(self.gen_input_shape, self.real_input_shape, self._hparams)
+    self._component.build(self.gen_input_shape, self.real_input_shape, self.condition_shape, self._hparams)
 
     if self._summarize:
       batch_types = ['training', 'encoding']
@@ -52,11 +52,16 @@ class GANWorkflow(Workflow):
   def training(self, dataset_handle, global_step):  # pylint: disable=arguments-differ
     """The training procedure within the batch loop"""
 
-    self._real_inputs = self._session.run(self._inputs, feed_dict={
+    labels_onehot_op = tf.one_hot(self._labels, depth=self._dataset.num_classes)
+
+    inputs, labels_onehot = self._session.run([self._inputs, labels_onehot_op], feed_dict={
         self._placeholders['dataset_handle']: dataset_handle
     })
 
     self._gen_inputs = np.random.normal(size=self.gen_input_shape).astype(np.float32)
+    # self._gen_inputs = self._real_inputs
+    self._real_inputs = inputs
+    self._condition = labels_onehot
 
     data_subset = 'train'
 
@@ -72,7 +77,8 @@ class GANWorkflow(Workflow):
 
     feed_dict = {
         self._component.get_dual().get_pl('gen_inputs'): self._gen_inputs,
-        self._component.get_dual().get_pl('real_inputs'): self._real_inputs
+        self._component.get_dual().get_pl('real_inputs'): self._real_inputs,
+        self._component.get_dual().get_pl('condition'): self._condition
     }
 
     # self._component.update_feed_dict(feed_dict, batch_type)
@@ -84,47 +90,3 @@ class GANWorkflow(Workflow):
     self._component.write_summaries(global_step, self._writer, batch_type=batch_type)
 
     return feed_dict
-
-  def run(self, num_batches, evaluate, train=True):
-    """Run Experiment"""
-
-    self._setup_profiler()
-
-    if train:
-      training_handle = self._session.run(self._dataset_iterators['training'].string_handle())
-      self._session.run(self._dataset_iterators['training'].initializer)
-
-      self._on_before_training_batches()
-
-      for batch in range(self._last_step, num_batches):
-        training_step = self._session.run(tf.train.get_global_step(self._session.graph))
-        training_epoch = self._dataset.get_training_epoch(self._hparams.batch_size, training_step)
-
-        # Perform the training, and retrieve feed_dict for evaluation phase
-        self.training(training_handle, batch)
-
-        self._on_after_training_batch(batch, training_step, training_epoch)
-
-        # Export any experiment-related data
-        # -------------------------------------------------------------------------
-        # if self._export_opts['export_filters']:
-        #   if batch == (num_batches - 1) or (batch + 1) % self._export_opts['interval_batches'] == 0:
-        #     self.export(self._session, feed_dict)
-
-        # if self._export_opts['export_checkpoint']:
-        #   if batch == (num_batches - 1) or (batch + 1) % self._export_opts['interval_batches'] == 0:
-        #     self._saver.save(self._session, os.path.join(self._summary_dir, 'model.ckpt'), global_step=batch + 1)
-
-        # # evaluation: every N steps, test the encoding model
-        # if evaluate:
-        #   if (batch + 1) % self._eval_opts['interval_batches'] == 0:  # defaults to once per batches
-        #     self.helper_evaluate(batch)
-
-      logging.info('Training & optional evaluation complete.')
-
-      self._run_profiler()
-
-    elif evaluate:  # train is False
-      self.helper_evaluate(0)
-    else:
-      logging.warning("Both 'train' and 'evaluate' flag are False, so nothing to run.")
