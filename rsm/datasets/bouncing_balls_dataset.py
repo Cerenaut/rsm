@@ -219,7 +219,6 @@ class BouncingBallsDataset(Dataset):  # pylint: disable=W0223
       sequence = self._get_test_sequence()
 
     # Normalize
-    sequence = sequence / 255
     sequence = sequence.astype(np.float32)
 
     return sequence
