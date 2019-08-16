@@ -28,7 +28,7 @@ from rsm.components.composite_rsm_stack import CompositeRSMStack
 class CompositeVideoWorkflow(CompositeWorkflow, VideoWorkflow):
   """A composite variant of the video workflow."""
 
-  def _do_batch_after_hook(self, global_step, batch_type, fetched, feed_dict):
+  def _do_batch_after_hook(self, global_step, batch_type, fetched, feed_dict, data_subset):
     if CompositeRSMStack.ae_name in self._component.get_sub_components().keys():
       sub_components = self._component.get_sub_component(CompositeRSMStack.ae_name).get_sub_components()
 
@@ -39,7 +39,7 @@ class CompositeVideoWorkflow(CompositeWorkflow, VideoWorkflow):
         self._decoder(global_step, name, CompositeRSMStack.ae_name, sub_component.get_encoding(), feed_dict)
 
     if CompositeRSMStack.rsm_name in self._component.get_sub_components().keys():
-      super()._do_batch_after_hook(global_step, batch_type, fetched, feed_dict)
+      super()._do_batch_after_hook(global_step, batch_type, fetched, feed_dict, data_subset)
 
       if CompositeRSMStack.ae_name in self._component.get_sub_components().keys():
         rsm_output = self.get_decoded_frame()

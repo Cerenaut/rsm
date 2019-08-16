@@ -96,7 +96,6 @@ class CompositeRSMStack(CompositeComponent):
   def get_dual(self, name=None):  # pylint: disable=arguments-differ
     if name is None:
       return self._dual
-    print(name)
     return self.get_sub_component(name).get_dual()
 
   def build(self, input_values, input_shape, label_values, label_shape, hparams, decoder=None,

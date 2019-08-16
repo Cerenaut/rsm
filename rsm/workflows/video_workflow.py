@@ -25,6 +25,7 @@ import logging
 import numpy as np
 import tensorflow as tf
 import matplotlib.pyplot as plt
+import matplotlib.gridspec as gridspec
 import matplotlib.animation as animation
 
 from rsm.workflows.image_sequence_workflow import ImageSequenceWorkflow
@@ -206,6 +207,14 @@ class VideoWorkflow(ImageSequenceWorkflow):
     self._inputs_vals = fetched['inputs']
     self._states_vals = fetched['states']
 
+    self._do_batch_after_hook(global_step, batch_type, fetched, feed_dict, data_subset)
+
+    return feed_dict
+
+  def _do_batch_after_hook(self, global_step, batch_type, fetched, feed_dict, data_subset):
+    """Things to do after a batch is completed."""
+    del global_step, feed_dict, fetched
+
     # Test-time conditions
     if batch_type == 'encoding' and data_subset == 'test':
       decoding = self.get_decoded_frame()
@@ -217,13 +226,6 @@ class VideoWorkflow(ImageSequenceWorkflow):
       # Collect samples for video export
       self._output_frames.append(decoding)
       self._groundtruth_frames.append(self._inputs_vals)
-
-    self._do_batch_after_hook(global_step, batch_type, fetched, feed_dict)
-
-    return feed_dict
-
-  def _do_batch_after_hook(self, global_step, batch_type, fetched, feed_dict):
-    del global_step, batch_type, feed_dict, fetched
 
     # Output as feedback for next step
     self._component.update_recurrent_and_feedback()
@@ -247,10 +249,9 @@ class VideoWorkflow(ImageSequenceWorkflow):
     sequence_chunks = list(chunks(input_frames, self._sequence_length))
 
     for i, sequence in enumerate(sequence_chunks):
-      fig = plt.figure()
-
       output_frames = []
-      sequence_filename = filename + '.' + str(i) + '.mp4'
+      sequence_filename = filename + '.' + str(i)
+      filepath = os.path.join(self._summary_dir, sequence_filename)
 
       for sample in sequence:
         cmap = None
@@ -260,12 +261,30 @@ class VideoWorkflow(ImageSequenceWorkflow):
           frame = frame.reshape(frame.shape[0], frame.shape[1])
           cmap = 'gray'
 
-        output_frames.append([plt.imshow(frame, cmap=cmap, animated=True)])
+        output_frames.append((frame, cmap))
 
-      ani = animation.ArtistAnimation(fig, output_frames, interval=50, blit=True,
+      # Export video
+      fig1 = plt.figure(1)
+      video_frames = []
+      for (frame, cmap) in output_frames:
+        video_frames.append([plt.imshow(frame, cmap=cmap, animated=True)])
+      ani = animation.ArtistAnimation(fig1, video_frames, interval=50, blit=True,
                                       repeat_delay=1000)
-      filepath = os.path.join(self._summary_dir, sequence_filename)
-      ani.save(filepath)
+      ani.save(filepath + '.mp4')
+
+      # Export frame by frame image
+      num_frames = len(output_frames)
+      fig2 = plt.figure(figsize=(num_frames, 2))
+      gs1 = gridspec.GridSpec(1, num_frames)
+      gs1.update(wspace=0.025, hspace=0.05) # set the spacing between axes.
+      plt.tight_layout()
+
+      for j, (frame, cmap) in enumerate(output_frames):
+        ax = plt.subplot(gs1[j])
+        ax.axis('off')
+        ax.set_aspect('equal')
+        ax.imshow(frame, cmap=cmap)
+      fig2.savefig(filepath + '.png', bbox_inches='tight')
 
   def run(self, num_batches, evaluate, train=True):
     super(ImageSequenceWorkflow, self).run(num_batches, evaluate, train)  # pylint: disable=bad-super-call

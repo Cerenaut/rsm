@@ -43,27 +43,27 @@ class CompositeGANVideoWorkflow(CompositeGANWorkflow, CompositeVideoWorkflow):
 
     return opts
 
+  def _build_prior_fetches(self):
+    return {'inputs': self._inputs, 'states': self._states}
+
   def training(self, dataset_handle, global_step):  # pylint: disable=arguments-differ
+    batch_type, fetched, feed_dict, data_subset = super().training(dataset_handle, global_step)
+    self._do_batch_after_hook(global_step, batch_type, fetched, feed_dict, data_subset)
+
+  def testing(self, dataset_handle, global_step):
+    batch_type, fetched, feed_dict, data_subset = super().testing(dataset_handle, global_step)
+    self._do_batch_after_hook(global_step, batch_type, fetched, feed_dict, data_subset)
+
+  def _do_batch(self, fetches, feed_dict, batch_type, data_subset, global_step):
     """The training procedure within the batch loop"""
-
-    fetches = {'inputs': self._inputs, 'states': self._states}
-
-    feed_dict = {
-        self._placeholders['dataset_handle']: dataset_handle
-    }
-
-    _, _, fetched = self._train_prior(fetches, feed_dict, global_step)
-    self._train_gan(fetched, global_step)
-
-  def _do_batch(self, fetches, feed_dict, batch_type, global_step):
-    """The training procedure within the batch loop"""
-    fetches, feed_dict, fetched = super()._do_batch(fetches, feed_dict, batch_type, global_step)
+    fetches, feed_dict, fetched = super()._do_batch(fetches, feed_dict, batch_type, data_subset, global_step)
 
     if 'states' in fetched:
       self._states_vals = fetched['states']
     if 'inputs' in fetched:
       self._inputs_vals = fetched['inputs']
 
-    self._do_batch_after_hook(global_step, batch_type, fetched, feed_dict)
-
     return fetches, feed_dict, fetched
+
+  def get_decoded_frame(self):
+    return self._component.get_sub_component('gan').get_output()
