@@ -5,6 +5,8 @@
     "component": "rsm.components.composite_rsm_stack",
     "batches": 50000,
 
+    "checkpoint": "./ckpts/summaries_20190816-115743/model.ckpt-50000",
+
     "hparams_override": {
       "batch_size": 128,
       "build_ae": false,
@@ -79,7 +81,16 @@
     "interval_batches": 1000
   },
   "workflow-options": {
-    "evaluate": false,
-    "pretrain_steps": 25000
+    "train": true,
+    "evaluate": true,
+    "summarize": true,
+
+    "pretrain_steps": 25000,
+
+    "prime": true,
+    "prime_num_frames": 10,
+
+    "num_testing_batches": 20,
+    "testing_progress_interval": 1
   }
 }
