@@ -90,7 +90,7 @@
     "prime": true,
     "prime_num_frames": 10,
 
-    "num_testing_batches": 20,
+    "num_testing_batches": 100,
     "testing_progress_interval": 1
   }
 }
