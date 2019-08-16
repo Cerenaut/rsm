@@ -37,12 +37,8 @@ class GANComponent(SummaryComponent):
   def default_hparams():
     """Builds an HParam object with default hyperparameters."""
     return tf.contrib.training.HParams(
-
-        batch_size=80,
-
-        # Optimizer options
-        optimizer='adam',
-        momentum=0.9,  # Ignore if adam
+        batch_size=128,
+        conditional=True,
 
         # Generator-specific options
         generator_num_layers=2,
@@ -50,9 +46,13 @@ class GANComponent(SummaryComponent):
         generator_filters_field_width=[6, 6],
         generator_filters_field_height=[6, 6],
         generator_filters_field_stride=[3, 3],
-        generator_nonlinearity=['relu', 'relu'],
-        generator_loss_lambda=0.9,
+        generator_nonlinearity=['leaky_relu', 'leaky_relu'],
+        generator_loss_mse_lambda=1.0,
+        generator_loss_adv_lambda=0.9,
         generator_learning_rate=0.0005,
+        generator_input_size=[28, 28, 1],
+        generator_input_nonlinearity='relu',
+        generator_output_nonlinearity='tanh',
 
         # Discriminator-specific options
         discriminator_num_layers=2,
@@ -60,17 +60,20 @@ class GANComponent(SummaryComponent):
         discriminator_filters_field_width=[6, 6],
         discriminator_filters_field_height=[6, 6],
         discriminator_filters_field_stride=[3, 3],
-        discriminator_nonlinearity=['leaky-relu', 'leaky-relu'],
-        discriminator_learning_rate=0.0005
+        discriminator_nonlinearity=['leaky_relu', 'leaky_relu'],
+        discriminator_learning_rate=0.0005,
+        discriminator_input_size=[28, 28, 1],
+        discriminator_input_nonlinearity='relu',
+        discriminator_output_nonlinearity='sigmoid',
+        discriminator_input_noise=False
     )
 
   class BaseNetwork:
     """A base class with common methods for generator and discriminator."""
-    def __init__(self, hparams, output_size, output_nonlinearity, name):
+    def __init__(self, hparams, output_size, name):
       self.name = name
       self.hparams = hparams
       self.output_size = output_size
-      self.output_nonlinearity = output_nonlinearity
 
       self.layers = self.build_layers()
 
@@ -78,6 +81,16 @@ class GANComponent(SummaryComponent):
       """Build the network."""
       with tf.variable_scope(self.name, reuse=tf.AUTO_REUSE, auxiliary_name_scope=False):
         layers = []
+
+        # if self.hparams.conditional:
+        #   input_shape = tuple(self.hparams.input_size)
+
+        #   input_layer = tf.layers.Dense(units=np.prod(input_shape),
+        #                                 activation=type_activation_fn(self.hparams.input_nonlinearity))
+        #   layers.append(input_layer)
+
+        #   reshape_layer = tf.keras.layers.Reshape(input_shape)
+        #   layers.append(reshape_layer)
 
         for i in range(self.hparams.num_layers):
           layer = tf.layers.Conv2D(
@@ -107,25 +120,30 @@ class GANComponent(SummaryComponent):
         outputs = inputs
         for layer in self.layers:
           outputs = layer(outputs)
-        return outputs, self.output_nonlinearity(outputs)
+        output_nonlinearity = type_activation_fn(self.hparams.output_nonlinearity)
+        return outputs, output_nonlinearity(outputs)
 
     def trainable_variables(self):
       return tf.trainable_variables(self.name)
 
   class Generator(BaseNetwork):
     """Builds the generator network."""
-    def __init__(self, hparams, output_size, output_nonlinearity=tf.nn.sigmoid, name='generator'):
+    def __init__(self, hparams, output_size, name='generator'):
       generator_hparams = tf.contrib.training.HParams(
           num_layers=hparams.generator_num_layers,
           filters=hparams.generator_filters,
           filters_field_height=hparams.generator_filters_field_height,
           filters_field_width=hparams.generator_filters_field_width,
           filters_field_stride=hparams.generator_filters_field_stride,
-          nonlinearity=hparams.generator_nonlinearity
+          nonlinearity=hparams.generator_nonlinearity,
+          input_size=hparams.generator_input_size,
+          input_nonlinearity=hparams.generator_input_nonlinearity,
+          output_nonlinearity=hparams.generator_output_nonlinearity,
+          conditional=hparams.conditional
       )
 
       super(GANComponent.Generator, self).__init__(
-          generator_hparams, output_size, output_nonlinearity, name)
+          generator_hparams, output_size, name)
 
     def loss(self, fake_logits):
       return tf.reduce_mean(
@@ -136,18 +154,55 @@ class GANComponent(SummaryComponent):
 
   class Discriminator(BaseNetwork):
     """Builds the discriminator network."""
-    def __init__(self, hparams, output_size=1, output_nonlinearity=tf.nn.sigmoid, name='discriminator'):
+    def __init__(self, hparams, output_size=1, name='discriminator'):
       discriminator_hparams = tf.contrib.training.HParams(
           num_layers=hparams.discriminator_num_layers,
           filters=hparams.discriminator_filters,
           filters_field_height=hparams.discriminator_filters_field_height,
           filters_field_width=hparams.discriminator_filters_field_width,
           filters_field_stride=hparams.discriminator_filters_field_stride,
-          nonlinearity=hparams.discriminator_nonlinearity
+          nonlinearity=hparams.discriminator_nonlinearity,
+          input_size=hparams.discriminator_input_size,
+          input_nonlinearity=hparams.discriminator_input_nonlinearity,
+          output_nonlinearity=hparams.discriminator_output_nonlinearity,
+          conditional=hparams.conditional
       )
 
       super(GANComponent.Discriminator, self).__init__(
-          discriminator_hparams, output_size, output_nonlinearity, name)
+          discriminator_hparams, output_size, name)
+
+    def __call__(self, inputs):
+      """
+      Args:
+        inputs: A tensor with shape = (b, h, w, c)
+      Returns:
+        It return the logits and the prediction with nonlinearity.
+      """
+      with tf.variable_scope(self.name, reuse=tf.AUTO_REUSE, auxiliary_name_scope=False):
+        gen_inputs, cond_inputs = inputs
+
+        outputs = gen_inputs
+        for layer in self.layers[:-1]:
+          outputs = layer(outputs)
+
+        if self.hparams.conditional:
+          # Use the same size and nonlinearity as previous layer
+          _, h, w, c = outputs.shape
+          cond_nonlinearity = type_activation_fn(self.hparams.nonlinearity[-1])
+          cond_layer = tf.layers.Dense(units=h * w * c, activation=cond_nonlinearity)
+
+          # Process the conditional input, reshape to same size as previous layer
+          cond_inputs_2d = tf.layers.flatten(cond_inputs)
+          cond_outputs_2d = cond_layer(cond_inputs_2d)
+          cond_outputs_4d = tf.reshape(cond_outputs_2d, [-1, h, w, c])
+
+          concat_outputs = tf.concat([outputs, cond_outputs_4d], axis=3)
+          outputs = tf.layers.flatten(concat_outputs)
+
+          outputs = self.layers[-1](concat_outputs)
+          output_nonlinearity = type_activation_fn(self.hparams.output_nonlinearity)
+
+        return outputs, output_nonlinearity(outputs)
 
     def loss(self, real_logits, fake_logits):
       """Build the discriminator loss."""
@@ -165,7 +220,7 @@ class GANComponent(SummaryComponent):
 
       return real_loss + fake_loss
 
-  def build(self, gen_input_shape, real_input_shape, hparams, name='gan', encoding_shape=None):
+  def build(self, gen_input_shape, real_input_shape, condition_shape, hparams, name='gan', encoding_shape=None):
     """Initializes the model parameters.
 
     Args:
@@ -182,40 +237,80 @@ class GANComponent(SummaryComponent):
     self._hparams = hparams
     self._gen_input_shape = gen_input_shape
     self._real_input_shape = real_input_shape
+    self._condition_shape = condition_shape
     self._encoding_shape = encoding_shape
+    self._loss = 0.0
 
     with tf.variable_scope(self.name, reuse=tf.AUTO_REUSE):
+      scope = (tf.no_op(name='.').name[:-1])
+
       with tf.name_scope('inputs'):
-        gen_inputs_pl = self._dual.add('gen_inputs', shape=gen_input_shape, default_value=0.0).add_pl()
-        real_inputs_pl = self._dual.add('real_inputs', shape=real_input_shape, default_value=0.0).add_pl()
+        gen_inputs_4d = self._dual.add('gen_inputs', shape=gen_input_shape, default_value=0.0).add_pl()
+        real_inputs_4d = self._dual.add('real_inputs', shape=real_input_shape, default_value=0.0).add_pl()
+        noise_param = self._dual.add('noise_param', shape=[], default_value=0.0).add_pl()
+        # condition_4d = self._dual.add('condition', shape=condition_shape, default_value=0.0).add_pl()
+        # condition_2d = tf.layers.flatten(condition_4d)
 
       with tf.name_scope(self.gen_name):
-        self._generator = self.Generator(hparams=self._hparams,
-                                         output_size=np.prod(real_input_shape[1:]),
-                                         output_nonlinearity=tf.nn.sigmoid,
-                                         name=self.gen_name)
+        gen_global_step = tf.Variable(0, trainable=False, name='global_step')
 
-        _, fake_output = self._generator(gen_inputs_pl)
-        fake_output = tf.reshape(fake_output, real_input_shape)
+        self._generator = self.Generator(
+            hparams=self._hparams,
+            output_size=np.prod(real_input_shape[1:]),
+            name=self.gen_name)
 
-        self._dual.set_op('fake_output', fake_output)
+        gen_input = gen_inputs_4d
+
+        # if self._hparams.conditional:
+        #   gen_inputs_2d = tf.layers.flatten(gen_inputs_4d)
+        #   gen_input = tf.concat([gen_inputs_2d, condition_2d], axis=1)
+
+        print('gen_input', gen_input)
+
+        _, fake_output = self._generator(gen_input)
+        fake_output_4d = tf.reshape(fake_output, real_input_shape)
+
+        self._dual.set_op('fake_output', fake_output_4d)
 
       with tf.name_scope(self.disc_name):
-        self._discriminator = self.Discriminator(hparams=self._hparams,
-                                                 output_size=1,
-                                                 output_nonlinearity=tf.nn.sigmoid,
-                                                 name=self.disc_name)
+        disc_global_step = tf.Variable(0, trainable=False, name='global_step')
 
-        real_logits, real_score = self._discriminator(real_inputs_pl)
-        fake_logits, fake_score = self._discriminator(fake_output)
+        self._discriminator = self.Discriminator(
+            hparams=self._hparams,
+            output_size=1,
+            name=self.disc_name)
+
+        disc_real_input = real_inputs_4d
+        disc_fake_input = fake_output_4d
+
+        # if self._hparams.conditional:
+        #   real_inputs_2d = tf.layers.flatten(real_inputs_4d)
+        #   fake_output_2d = tf.layers.flatten(fake_output_4d)
+
+        #   disc_real_input = tf.concat([real_inputs_2d, condition_2d], axis=1)
+        #   disc_fake_input = tf.concat([fake_output_2d, condition_2d], axis=1)
+
+        if self._hparams.discriminator_input_noise:
+          disc_input_noise = tf.random_normal(shape=tf.shape(disc_real_input), mean=0.0, stddev=noise_param,
+                                              dtype=tf.float32)
+
+          disc_real_input = disc_real_input + disc_input_noise
+          disc_fake_input = disc_real_input + disc_input_noise
+
+        print('disc_real_input', disc_real_input)
+        print('disc_fake_input', disc_fake_input)
+
+        real_logits, real_score = self._discriminator(inputs=(disc_real_input, gen_inputs_4d))
+        fake_logits, fake_score = self._discriminator(inputs=(disc_fake_input, gen_inputs_4d))
 
         self._dual.set_op('real_score', real_score)
         self._dual.set_op('fake_score', fake_score)
 
       with tf.name_scope(self.gen_name + '/loss'):
         gen_adv_loss = self._generator.loss(fake_logits)
-        gen_mse_loss = tf.losses.mean_squared_error(real_inputs_pl, fake_output)
-        gen_total_loss = gen_mse_loss + (self._hparams.generator_loss_lambda * gen_adv_loss)
+        gen_mse_loss = tf.losses.mean_squared_error(real_inputs_4d, fake_output_4d)
+        gen_total_loss = (self._hparams.generator_loss_mse_lambda * gen_mse_loss) + \
+                         (self._hparams.generator_loss_adv_lambda * gen_adv_loss)
 
         self._dual.set_op('gen_adv_loss', gen_adv_loss)
         self._dual.set_op('gen_mse_loss', gen_mse_loss)
@@ -223,10 +318,10 @@ class GANComponent(SummaryComponent):
 
       with tf.variable_scope(self.gen_name + '/optimizer'):
         gen_optimizer = tf.train.AdamOptimizer(learning_rate=self._hparams.generator_learning_rate)
-        gen_variables = tf.trainable_variables(self.name + '/' + self._generator.name)
+        gen_variables = tf.trainable_variables(scope + self._generator.name)
         gen_train_op = gen_optimizer.minimize(loss=gen_total_loss,
                                               var_list=gen_variables,
-                                              global_step=tf.train.get_or_create_global_step())
+                                              global_step=gen_global_step)
 
         self._dual.set_op('gen_train_op', gen_train_op)
 
@@ -236,16 +331,22 @@ class GANComponent(SummaryComponent):
         self._dual.set_op('disc_loss', disc_loss)
 
       with tf.variable_scope(self.disc_name + '/optimizer'):
-        disc_optimizer = tf.train.AdamOptimizer(learning_rate=self._hparams.discriminator_learning_rate)
-        disc_variables = tf.trainable_variables(self.name + '/' + self._discriminator.name)
+        disc_optimizer = tf.train.GradientDescentOptimizer(learning_rate=self._hparams.discriminator_learning_rate)
+        disc_variables = tf.trainable_variables(scope + self._discriminator.name)
         disc_train_op = disc_optimizer.minimize(loss=disc_loss,
                                                 var_list=disc_variables,
-                                                global_step=tf.train.get_or_create_global_step())
+                                                global_step=disc_global_step)
 
         self._dual.set_op('disc_train_op', disc_train_op)
 
   def get_loss(self):
     return self._loss
+
+  def get_output(self):
+    return self.get_values('fake_output')
+
+  def get_output_op(self):
+    return self.get_op('fake_output')
 
   def add_fetches(self, fetches, batch_type=None):
     """Adds ops that will get evaluated."""

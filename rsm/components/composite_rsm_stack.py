@@ -24,14 +24,18 @@ import tensorflow as tf
 from pagi.utils.hparam_multi import HParamMulti
 from pagi.components.composite_component import CompositeComponent
 
+from rsm.components.gan_component import GANComponent
+from rsm.components.sequence_memory_layer import SequenceMemoryLayer
 from rsm.components.sequence_memory_stack import SequenceMemoryStack
 from rsm.components.sparse_conv_autoencoder_stack import SparseConvAutoencoderStack
+
 
 class CompositeRSMStack(CompositeComponent):
   """A composite component consisting of a stack of k-Sparse convolutional autoencoders and a stack of RSM layers."""
 
   ae_name = 'ae_stack'
   rsm_name = 'rsm_stack'
+  gan_name = 'gan'
 
   @staticmethod
   def default_hparams():
@@ -42,14 +46,16 @@ class CompositeRSMStack(CompositeComponent):
     hparams = tf.contrib.training.HParams(
         batch_size=batch_size,
         build_rsm=True,
-        build_ae=True
+        build_ae=True,
+        build_gan=True
     )
 
     # create all possible sub component hparams
     ae_stack = SparseConvAutoencoderStack.default_hparams()
     rsm_stack = SequenceMemoryStack.default_hparams()
+    gan_stack = GANComponent.default_hparams()
 
-    subcomponents = [ae_stack, rsm_stack]   # all possible subcomponents
+    subcomponents = [ae_stack, rsm_stack, gan_stack]   # all possible subcomponents
 
     def set_hparam_in_subcomponents(hparam_name, val):
       """Sets the common hparams to sub components."""
@@ -76,6 +82,7 @@ class CompositeRSMStack(CompositeComponent):
     # add sub components to the composite hparams
     HParamMulti.add(source=ae_stack, multi=hparams, component=CompositeRSMStack.ae_name)
     HParamMulti.add(source=rsm_stack, multi=hparams, component=CompositeRSMStack.rsm_name)
+    HParamMulti.add(source=gan_stack, multi=hparams, component=CompositeRSMStack.gan_name)
 
     return hparams
 
@@ -89,6 +96,7 @@ class CompositeRSMStack(CompositeComponent):
   def get_dual(self, name=None):  # pylint: disable=arguments-differ
     if name is None:
       return self._dual
+    print(name)
     return self.get_sub_component(name).get_dual()
 
   def build(self, input_values, input_shape, label_values, label_shape, hparams, decoder=None,
@@ -104,6 +112,7 @@ class CompositeRSMStack(CompositeComponent):
     """
     self._name = name
     self._hparams = hparams
+    self._input_values = input_values
 
     with tf.variable_scope(self._name, reuse=tf.AUTO_REUSE):
       input_values_next = input_values
@@ -115,9 +124,16 @@ class CompositeRSMStack(CompositeComponent):
 
       # Build the RSM Stack
       if self._hparams.build_rsm:
-        self._build_rsm_stack(input_values_next, input_shape_next, label_values, label_shape, decoder)
+        input_values_next, input_shape_next = self._build_rsm_stack(input_values_next, input_shape_next,
+                                                                    label_values, label_shape, decoder)
 
-        self._layers = self.get_sub_component(self.rsm_name).get_layers()
+      # Build the GAN Component
+      if self._hparams.build_gan:
+        real_input_shape = input_values.get_shape().as_list()
+        gen_input_shape = input_shape_next
+        condition_shape = input_shape_next
+
+        self._build_gan(gen_input_shape, real_input_shape, condition_shape)
 
   def _build_ae_stack(self, input_values, input_shape):
     """Builds a stack of k-Sparse convolutional autoencoders."""
@@ -143,13 +159,35 @@ class CompositeRSMStack(CompositeComponent):
                     decoder=decoder, hparams=rsm_stack_hparams, name=self.rsm_name)
     self._add_sub_component(rsm_stack, self.rsm_name)
 
-  def build_secondary_decoding_summaries(self, name, component):
-    """Builds secondary decoding summaries."""
-    scope = component + '-summaries/'
-    self.get_sub_component(component).build_secondary_decoding_summaries(scope, name)
+    self._layers = self.get_sub_component(self.rsm_name).get_layers()
+    input_values_next = self._layers[-1].get_op(SequenceMemoryLayer.encoding)
+    input_shape_next = input_values_next.get_shape().as_list()
+
+    return input_values_next, input_shape_next
+
+  def _build_gan(self, gen_input_shape, real_input_shape, condition_shape):
+    """Build a GAN."""
+    gan = GANComponent()
+    gan_hparams = GANComponent.default_hparams()
+
+    gan_hparams = HParamMulti.override(multi=self._hparams, target=gan_hparams, component=self.gan_name)
+    gan.build(gen_input_shape, real_input_shape, condition_shape, gan_hparams)
+    self._add_sub_component(gan, self.gan_name)
+
+    input_values_next = gan.get_output_op()
+    input_shape_next = input_values_next.get_shape().as_list()
+
+    return input_values_next, input_shape_next
+
+  def get_gan_inputs(self):
+    if self._hparams.build_rsm:
+      return self.get_sub_component(CompositeRSMStack.rsm_name).get_layer(-1).get_values(SequenceMemoryLayer.encoding)
+    if self._hparams.build_ae:
+      return self.get_sub_component(CompositeRSMStack.ae_name).get_sub_component('output').get_encoding()
+    return self._input_values
 
   # --------------------------------------------------------------------------
-  # RSM-specific Methods
+  # RSM Stack Methods
   # --------------------------------------------------------------------------
 
   def update_recurrent_and_feedback(self):
@@ -160,3 +198,48 @@ class CompositeRSMStack(CompositeComponent):
 
   def update_history(self, session, history_mask):
     return self.get_sub_component(self.rsm_name).update_history(session, history_mask)
+
+  # --------------------------------------------------------------------------
+  # Composite Component Methods
+  # --------------------------------------------------------------------------
+
+  def filter_sub_components(self, batch_type):
+    """Filter the subcomponents to use by the batch_type provided."""
+    real_batch_type = batch_type
+    sub_components = self._sub_components.copy()
+
+    if self._hparams.build_gan:
+      sub_components.pop(CompositeRSMStack.gan_name)
+
+    if '-' in batch_type:
+      parsed_batch_type = batch_type.split('-')
+      component_name = parsed_batch_type[0]
+      real_batch_type = parsed_batch_type[-1]
+
+      sub_components = {k: v for (k, v) in self._sub_components.items() if k.startswith(component_name)}
+
+    return real_batch_type, sub_components
+
+  def update_feed_dict(self, feed_dict, batch_type='training'):
+    filtered_batch_type, filtered_sub_components = self.filter_sub_components(batch_type)
+
+    for name, comp in filtered_sub_components.items():
+      comp.update_feed_dict(feed_dict, self._select_batch_type(filtered_batch_type, name))
+
+  def add_fetches(self, fetches, batch_type='training'):
+    filtered_batch_type, filtered_sub_components = self.filter_sub_components(batch_type)
+
+    for name, comp in filtered_sub_components.items():
+      comp.add_fetches(fetches, self._select_batch_type(filtered_batch_type, name))
+
+  def set_fetches(self, fetched, batch_type='training'):
+    filtered_batch_type, filtered_sub_components = self.filter_sub_components(batch_type)
+
+    for name, comp in filtered_sub_components.items():
+      comp.set_fetches(fetched, self._select_batch_type(filtered_batch_type, name))
+
+  def write_summaries(self, step, writer, batch_type='training'):
+    filtered_batch_type, filtered_sub_components = self.filter_sub_components(batch_type)
+
+    for name, comp in filtered_sub_components.items():
+      comp.write_summaries(step, writer, self._select_batch_type(filtered_batch_type, name))
