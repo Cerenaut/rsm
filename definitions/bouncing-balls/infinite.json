@@ -1,6 +1,6 @@
 {
   "experiment-options": {
-    "workflow": "rsm.workflows.moving_mnist_workflow",
+    "workflow": "rsm.workflows.video_workflow",
     "dataset": "rsm.datasets.bouncing_balls_dataset",
     "component": "rsm.components.sequence_memory_stack",
     "batches": 10,
