@@ -350,10 +350,13 @@ class GANComponent(SummaryComponent):
 
   def add_fetches(self, fetches, batch_type=None):
     """Adds ops that will get evaluated."""
+
+    names = ['fake_output']
+
     if batch_type.startswith(self._generator.name + '_'):
       real_batch_type = batch_type.split(self._generator.name + '_')[-1]
 
-      names = ['gen_total_loss', 'fake_output']
+      names.extend(['gen_total_loss'])
 
       if real_batch_type == 'training':
         names.extend(['gen_train_op'])
@@ -361,7 +364,7 @@ class GANComponent(SummaryComponent):
     elif batch_type.startswith(self._discriminator.name + '_'):
       real_batch_type = batch_type.split(self._discriminator.name + '_')[-1]
 
-      names = ['disc_loss']
+      names.extend(['disc_loss'])
 
       if real_batch_type == 'training':
         names.extend(['disc_train_op'])
@@ -377,20 +380,18 @@ class GANComponent(SummaryComponent):
   def set_fetches(self, fetched, batch_type='training'):
     """Store updated tensors"""
 
+    names = ['fake_output']
+
     # Loss (not a tensor)
     if batch_type.startswith(self._generator.name + '_'):
       real_batch_type = batch_type.split(self._generator.name + '_')[-1]
 
       self._loss = fetched[self.name]['gen_total_loss']
 
-      names = ['fake_output']
-
     elif batch_type.startswith(self._discriminator.name + '_'):
       real_batch_type = batch_type.split(self._discriminator.name + '_')[-1]
 
       self._loss = fetched[self.name]['disc_loss']
-
-      names = []
 
     else:
       raise NotImplementedError('Batch type not supported: ' + batch_type)

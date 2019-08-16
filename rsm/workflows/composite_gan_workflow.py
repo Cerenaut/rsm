@@ -36,18 +36,22 @@ class CompositeGANWorkflow(Workflow):
     opts.add_hparam('pretrain_steps', 2000)
     return opts
 
-  def _train_prior(self, fetches, feed_dict, global_step):
-    batch_type = 'training'
-    if global_step > self._opts['pretrain_steps']:
-      batch_type = 'encoding'
+  def _build_prior_fetches(self):
+    return {'inputs': self._inputs}
 
-    return self._do_batch(fetches, feed_dict, batch_type, global_step)
+  def _build_prior_feed_dict(self, dataset_handle):
+    return {
+        self._placeholders['dataset_handle']: dataset_handle
+    }
 
-  def _train_gan(self, fetched, global_step):
-    """Train a GAN by doing a discriminator step, followed by generator step."""
-    if self._hparams.build_gan and global_step > self._opts['pretrain_steps']:
-      gan_step = int(global_step % (self._opts['pretrain_steps'] + 1e-8))
-      disc_input_noise = self._disc_input_noise[gan_step]
+  def _do_gan_batch(self, batch_type, fetched, data_subset, global_step):
+    """Perform a discriminator step, followed by generator step."""
+    if self._hparams.build_gan and (batch_type == 'encoding' or global_step > self._opts['pretrain_steps']):
+      disc_input_noise = 0.0
+
+      if batch_type == 'training':
+        gan_step = int(global_step % (self._opts['pretrain_steps'] + 1e-8))
+        disc_input_noise = self._disc_input_noise[gan_step]
 
       def build_feed_dict(gen_inputs, real_inputs):
         gan_dual = self._component.get_sub_component(CompositeRSMStack.gan_name).get_dual()
@@ -64,27 +68,52 @@ class CompositeGANWorkflow(Workflow):
       gen_inputs = self._component.get_gan_inputs()
 
       fetches, feed_dict = build_feed_dict(gen_inputs, real_inputs)
-      batch_type = self._component.gan_name + '-discriminator_training'
-      self._do_batch(fetches, feed_dict, batch_type, global_step)
+      batch_type = self._component.gan_name + '-discriminator_' + batch_type
+      self._do_batch(fetches, feed_dict, batch_type, data_subset, global_step)
 
       fetches, feed_dict = build_feed_dict(gen_inputs, real_inputs)
-      batch_type = self._component.gan_name + '-generator_training'
-      self._do_batch(fetches, feed_dict, batch_type, global_step)
+      batch_type = self._component.gan_name + '-generator_' + batch_type
+      self._do_batch(fetches, feed_dict, batch_type, data_subset, global_step)
 
   def training(self, dataset_handle, global_step):  # pylint: disable=arguments-differ
     """The training procedure within the batch loop"""
 
-    fetches = {'inputs': self._inputs}
+    data_subset = 'train'
 
-    feed_dict = {
-        self._placeholders['dataset_handle']: dataset_handle
-    }
+    batch_type = 'training'
+    if self._freeze_training or global_step > self._opts['pretrain_steps']:
+      batch_type = 'encoding'
 
-    _, _, fetched = self._train_prior(fetches, feed_dict, global_step)
-    self._train_gan(fetched, global_step)
+    fetches = self._build_prior_fetches()
+    feed_dict = self._build_prior_feed_dict(dataset_handle)
+    _, _, fetched = self._do_batch(fetches, feed_dict, batch_type, data_subset, global_step)
 
-  def _do_batch(self, fetches, feed_dict, batch_type, global_step):
+    batch_type = 'training'
+    if self._freeze_training:
+      batch_type = 'encoding'
+
+    self._do_gan_batch(batch_type, fetched, data_subset, global_step)
+
+    return batch_type, fetched, feed_dict, data_subset
+
+  def testing(self, dataset_handle, global_step):
+    """The testing procedure within the batch loop"""
+
+    batch_type = 'encoding'
+    data_subset = 'test'
+
+    fetches = self._build_prior_fetches()
+    feed_dict = self._build_prior_feed_dict(dataset_handle)
+    _, _, fetched = self._do_batch(fetches, feed_dict, batch_type, data_subset, global_step)
+
+    self._do_gan_batch(batch_type, fetched, data_subset, global_step)
+
+    return batch_type, fetched, feed_dict, data_subset
+
+  def _do_batch(self, fetches, feed_dict, batch_type, data_subset, global_step):
     """The training procedure within the batch loop"""
+    del data_subset
+
     self._component.update_feed_dict(feed_dict, batch_type)
     self._component.add_fetches(fetches, batch_type)
 
