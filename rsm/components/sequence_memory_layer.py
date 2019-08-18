@@ -98,9 +98,10 @@ class SequenceMemoryLayer(SummaryComponent):
         decode_bias=True,
 
         # Regularization, 0=Off
-        l2_f=0.0,
-        l2_r=0.0,
-        l2_b=0.0,
+        l2_f=0.0,  # feed Forward
+        l2_r=0.0,  # Recurrent
+        l2_b=0.0,  # feed-Back
+        l2_d=0.0,  # Decode
 
         # Initialization
         f_sd=0.03,
@@ -363,11 +364,13 @@ class SequenceMemoryLayer(SummaryComponent):
     self._training_batch_count = 0
 
     self._weights_f = None
-    self._bias_f = None
     self._weights_r = None
-    self._bias_r = None
     self._weights_b = None
+    self._weights_d = None
+    self._bias_f = None
+    self._bias_r = None
     self._bias_b = None
+    self._bias_d = None
 
     self._input_shape = input_shape
     self._input_values = input_values
@@ -966,34 +969,54 @@ class SequenceMemoryLayer(SummaryComponent):
     # Make the decoding layer (TODO: Should be conv too!)
     hidden_area = np.prod(hidden_tensor.get_shape()[1:])
     hidden_reshape = tf.reshape(hidden_tensor, shape=[self._hparams.batch_size, hidden_area])
+    decode_layer_name = 'deconvolved'
     decoding_weighted_sum = tf.layers.dense(
         inputs=hidden_reshape, units=target_area,
-        activation=None, use_bias=self._hparams.decode_bias, name='deconvolved')  # Note we use our own nonlinearity, elsewhere.
+        activation=None, use_bias=self._hparams.decode_bias, name=decode_layer_name)  # Note we use our own nonlinearity, elsewhere.
+
+    with tf.variable_scope(decode_layer_name, reuse=True):
+      self._weights_d = tf.get_variable('kernel')
+      if self._hparams.decode_bias:
+        self._bias_d = tf.get_variable('bias')
 
     decode_transfer, _ = activation_fn(decoding_weighted_sum, self._hparams.decode_nonlinearity)
     decoding_logits_reshape = tf.reshape(decoding_weighted_sum, target_shape)
     decoding_transfer_reshape = tf.reshape(decode_transfer, target_shape)
     return decoding_transfer_reshape, decoding_logits_reshape
 
-  def _build_l2_loss(self, w, b, scale, other_losses):
+  def _build_l2_loss(self, dendrite, w, b, scale, other_losses):
     if scale <= 0.0:
+      logging.info('Dendrite: ' + dendrite + '. Skipping, L2=0.')
       return other_losses
 
-    logging.info('Adding L2 loss: ' + str(scale))
+    if w is None:
+      logging.info('Dendrite: ' + dendrite + '. Skipping, W=None.')
+      return other_losses
+
+    logging.info('Dendrite: ' + dendrite + '. Adding L2 loss (W): ' + str(scale))
     l2_loss_w = tf.nn.l2_loss(w)
-    l2_loss_b = tf.nn.l2_loss(b)
-    l2_loss = tf.reduce_sum(l2_loss_w) + tf.reduce_sum(l2_loss_b)
+    if b is not None:
+      logging.info('Dendrite: ' + dendrite + '. Adding L2 loss (b): ' + str(scale))
+      l2_loss_b = tf.nn.l2_loss(b)
+      l2_loss = tf.reduce_sum(l2_loss_w) + tf.reduce_sum(l2_loss_b)
+    else:
+      l2_loss = tf.reduce_sum(l2_loss_w)
+
     l2_loss_scaled = l2_loss * scale
 
-    all_losses = other_losses + l2_loss_scaled
+    if other_losses is None:
+      all_losses = l2_loss_scaled
+    else:
+      all_losses = other_losses + l2_loss_scaled
     return all_losses
 
   def _build_extra_losses(self):
     """Defines some extra criteria to optimize - in this case regularization"""
     l2_losses = None
-    l2_losses = self._build_l2_loss(self._weights_f, self._bias_f, self._hparams.l2_f, l2_losses )
-    l2_losses = self._build_l2_loss(self._weights_r, self._bias_r, self._hparams.l2_r, l2_losses )
-    l2_losses = self._build_l2_loss(self._weights_b, self._bias_b, self._hparams.l2_b, l2_losses )
+    l2_losses = self._build_l2_loss('f', self._weights_f, self._bias_f, self._hparams.l2_f, l2_losses )
+    l2_losses = self._build_l2_loss('r', self._weights_r, self._bias_r, self._hparams.l2_r, l2_losses )
+    l2_losses = self._build_l2_loss('b', self._weights_b, self._bias_b, self._hparams.l2_b, l2_losses )
+    l2_losses = self._build_l2_loss('d', self._weights_d, self._bias_d, self._hparams.l2_d, l2_losses )
     return l2_losses
 
   def _build_optimizer(self):

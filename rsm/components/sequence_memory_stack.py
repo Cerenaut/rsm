@@ -121,6 +121,7 @@ class SequenceMemoryStack(SummaryComponent):
         l2_f=[0.0],
         l2_r=[0.0],
         l2_b=[0.0],
+        l2_d=[0.0],
 
         # Control statistics
         freq_update_interval=10,
@@ -495,6 +496,7 @@ class SequenceMemoryStack(SummaryComponent):
       layer_hparams.l2_f = self._hparams.l2_f[i]
       layer_hparams.l2_r = self._hparams.l2_r[i]
       layer_hparams.l2_b = self._hparams.l2_b[i]
+      layer_hparams.l2_d = self._hparams.l2_d[i]
 
       layer_hparams.decode_nonlinearity = self._hparams.decode_nonlinearity[i]
       layer_hparams.inhibition_decay = self._hparams.inhibition_decay[i]
