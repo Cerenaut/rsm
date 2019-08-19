@@ -104,6 +104,9 @@ class GANComponent(SummaryComponent):
           )
           layers.append(layer)
 
+        flatten_layer = tf.layers.Flatten()
+        layers.append(flatten_layer)
+
         output_layer = tf.layers.Dense(self.output_size, activation=None)
         layers.append(output_layer)
 
@@ -182,7 +185,7 @@ class GANComponent(SummaryComponent):
         gen_inputs, cond_inputs = inputs
 
         outputs = gen_inputs
-        for layer in self.layers[:-1]:
+        for layer in self.layers[:-2]:
           outputs = layer(outputs)
 
         if self.hparams.conditional:
