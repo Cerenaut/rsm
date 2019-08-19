@@ -56,8 +56,10 @@ class SequenceMemoryLayer(SummaryComponent):
 
         # General options
         training_interval=[0, -1],  # [0,-1] means forever
-        autoencode=False,
+        #autoencode=False,
+        mode = 'predict-input',
         hidden_nonlinearity='tanh', # used for hidden layer only
+        decode_nonlinearity='none', # Used for decoding
         inhibition_decay=0.1,  # controls refractory period
 
         predictor_norm_input=True,
@@ -67,7 +69,7 @@ class SequenceMemoryLayer(SummaryComponent):
         feedback_decay_rate=0.0,  # Optional integrated/exp decay feedback
         feedback_keep_rate=1.0,  # Optional dropout on feedback
         feedback_norm=True,  # Option to normalize feedback
-        feedback_norm_eps=0.00000001,  # Prevents feedback norm /0
+        feedback_norm_eps=0.0000000001,  # Prevents feedback norm /0
 
         # Geometry
         filters=-1,  # Ignored, but inherited
@@ -95,6 +97,12 @@ class SequenceMemoryLayer(SummaryComponent):
         fb_bias=False,
         decode_bias=True,
 
+        # Regularization, 0=Off
+        l2_f=0.0,  # feed Forward
+        l2_r=0.0,  # Recurrent
+        l2_b=0.0,  # feed-Back
+        l2_d=0.0,  # Decode
+
         # Initialization
         f_sd=0.03,
         r_sd=0.03,
@@ -113,6 +121,10 @@ class SequenceMemoryLayer(SummaryComponent):
   training = 'training'
   encoding = 'encoding'
 
+  mode_encode_input = 'encode-input'  # i.e. be an autoencoder
+  mode_predict_input = 'predict-input'  # Predict next input F
+  mode_predict_target = 'predict-target'  # Predict some target input
+
   usage = 'usage'
   usage_col = 'usage-col'
   usage_cell = 'usage-cell'
@@ -126,6 +138,7 @@ class SequenceMemoryLayer(SummaryComponent):
   encoding_mask = 'encoding-mask'
   encoding = 'encoding'
   decoding = 'decoding'
+  decoding_logits = 'decoding_logits'
   encoding_f = 'forward_encoding'
   encoding_r = 'recurrent_encoding'
   encoding_b = 'feedback_encoding'
@@ -207,7 +220,8 @@ class SequenceMemoryLayer(SummaryComponent):
 
   def update_recurrent(self):
     """If feedback is only the recurrent state, then simply copy it into place."""
-    if self._hparams.autoencode is True:
+    #if self._hparams.autoencode is True:
+    if self._hparams.mode == self.mode_predict_input:
       return  # No feedback
 
     output = self.get_values(self.encoding)
@@ -275,15 +289,15 @@ class SequenceMemoryLayer(SummaryComponent):
     history_pl = history.get_pl()
 
     feed_dict = {
-        inhibition_pl: inhibition_values,
-        previous_pl: previous_values,
-        recurrent_pl: recurrent_values,
-        history_pl: history_mask
+      inhibition_pl: inhibition_values,
+      previous_pl: previous_values,
+      recurrent_pl: recurrent_values,
+      history_pl: history_mask
     }
 
     fetches = {
-        self.inhibition_mask: self._dual.get_op(self.inhibition_mask),
-        self.recurrent_mask: self._dual.get_op(self.recurrent_mask)
+      self.inhibition_mask: self._dual.get_op(self.inhibition_mask),
+      self.recurrent_mask: self._dual.get_op(self.recurrent_mask)
     }
 
     if self.use_feedback():
@@ -291,7 +305,7 @@ class SequenceMemoryLayer(SummaryComponent):
       feedback_values = feedback.get_values()  # 4d: b, h?, w?, d?
       feedback_pl = feedback.get_pl()  # 4d
       feed_dict.update({
-          feedback_pl: feedback_values
+        feedback_pl: feedback_values
       })
       fetches[self.feedback_mask] = self._dual.get_op(self.feedback_mask)
 
@@ -331,7 +345,7 @@ class SequenceMemoryLayer(SummaryComponent):
                                                         hparams.cols * hparams.cells_per_col,
                                                         padding='SAME')
 
-  def build(self, input_values, input_shape, hparams, name='rsm', encoding_shape=None, feedback_shape=None):  # pylint: disable=W0221
+  def build(self, input_values, input_shape, hparams, name='rsm', encoding_shape=None, feedback_shape=None, target_shape=None, target_values=None):  # pylint: disable=W0221
     """Initializes the model parameters.
 
     Args:
@@ -349,8 +363,20 @@ class SequenceMemoryLayer(SummaryComponent):
     self._freq_update_count = 0
     self._training_batch_count = 0
 
+    self._weights_f = None
+    self._weights_r = None
+    self._weights_b = None
+    self._weights_d = None
+    self._bias_f = None
+    self._bias_r = None
+    self._bias_b = None
+    self._bias_d = None
+
     self._input_shape = input_shape
     self._input_values = input_values
+
+    self._target_shape = target_shape
+    self._target_values = target_values
 
     self._encoding_shape = encoding_shape
     if self._encoding_shape is None:
@@ -369,6 +395,8 @@ class SequenceMemoryLayer(SummaryComponent):
       logging.info('Feedback shape: %s', str(self._feedback_shape))
     else:
       logging.info('Feedback shape: N/A')
+    _, target_shape = self.get_target()
+    logging.info('Target shape: %s', str(target_shape))
     logging.info('~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~')
 
     with tf.variable_scope(self.name, reuse=tf.AUTO_REUSE):
@@ -422,10 +450,14 @@ class SequenceMemoryLayer(SummaryComponent):
     # NOTE: Assuming here it is CORRECT to norm over conv w,h
     if do_norm is True:
       sum_input = tf.reduce_sum(input_4d, axis=[1, 2, 3], keepdims=True) + eps
-      unit_input_4d = tf.divide(input_4d, sum_input)
+      norm_input_4d = tf.divide(input_4d, sum_input)
+
+      # TODO investigate alternative norm, e.g. frobenius norm:
+      #frobenius_norm = tf.sqrt(tf.reduce_sum(tf.square(input_values_next), axis=[1, 2, 3], keepdims=True))
     else:
-      unit_input_4d = input_4d
-    return unit_input_4d
+      norm_input_4d = input_4d
+    return norm_input_4d
+
 
   def _build_fb_conditioning(self, feedback_input_4d):
     """Build feedback conditioning."""
@@ -460,6 +492,16 @@ class SequenceMemoryLayer(SummaryComponent):
 
     return f_input
 
+  def get_target(self):
+    #target = self._input_values
+    ff_target = self._input_values  # Current input
+    ff_target_shape = self._input_shape
+    if self._hparams.mode == self.mode_predict_target:
+      ff_target = self._target_values
+      ff_target_shape = self._target_shape
+    ff_target_shape[0] = self._hparams.batch_size
+    return ff_target, ff_target_shape
+
   def _build(self):
     """Build the autoencoder network"""
 
@@ -481,11 +523,17 @@ class SequenceMemoryLayer(SummaryComponent):
     self._dual.set_op(self.previous, self._input_values)
 
     # FF input
-    ff_target = self._input_values
-    if self._hparams.autoencode is True:
+    ff_target, ff_target_shape = self.get_target()
+    # ff_target = self._input_values  # Current input
+    # ff_target_shape = self._input_shape
+    # if self._hparams.mode == self.mode_predict_target:
+    #   ff_target = self._target_values
+    #   ff_target_shape = self._target_shape
+    # ff_target_shape[0] = self._hparams.batch_size
+
+    ff_input = previous_pl  # ff_input = x_ff(t-1)
+    if self._hparams.mode == self.mode_encode_input:  # Autoencode
       ff_input = ff_target  # ff_input = x_ff(t)
-    else:
-      ff_input = previous_pl  # ff_input = x_ff(t-1)
     ff_input = self._build_ff_conditioning(ff_input)
 
     with tf.name_scope('encoding'):
@@ -560,16 +608,19 @@ class SequenceMemoryLayer(SummaryComponent):
     # NB: y(t) doesnt depend on x_ff(t)
     # y(t) = f( x_ff(t-1) , y(t-1) OK
     with tf.name_scope('decoding'):
+      # TODO Consider removing this bottleneck to allow diff cells in a col to predict different cols.
       output_encoding_cols_4d = tf.reduce_max(training_filtered_cells_5d, axis=-1)
 
       # decode: predict x_t given y_t where
       # y_t = encoding of x_t-1 and y_t-1
-      decoding = self._build_decoding(ff_target, output_encoding_cols_4d)
+      decoding, decoding_logits = self._build_decoding(ff_target_shape, output_encoding_cols_4d)
       self._dual.set_op(self.decoding, decoding) # This is the thing that's optimized by the memory itself
+      self._dual.set_op(self.decoding_logits, decoding_logits) # This is the thing that's optimized by the memory itself
 
       # Debug the per-sample prediction error inherent to the memory.
       prediction_error = tf.abs(ff_target - decoding)
-      sum_abs_error = tf.reduce_sum(prediction_error, axis=[1, 2, 3])
+      #sum_abs_error = tf.reduce_sum(prediction_error, axis=[1, 2, 3])
+      sum_abs_error = tf.reduce_sum(prediction_error)
       self._dual.set_op(self.sum_abs_error, sum_abs_error)
 
     # Managing history
@@ -673,7 +724,7 @@ class SequenceMemoryLayer(SummaryComponent):
     add_bias = self._hparams.fb_bias
     initial_sd = self._hparams.b_sd  # Not previously defined
     scope = 'feedback'
-    convolved, self._weights_r, self._bias_r = self._build_conv_encoding(input_shape, input_tensor, field_stride,
+    convolved, self._weights_b, self._bias_b = self._build_conv_encoding(input_shape, input_tensor, field_stride,
                                                                          field_height, field_width, output_depth,
                                                                          add_bias, initial_sd, scope)
     return convolved
@@ -906,45 +957,99 @@ class SequenceMemoryLayer(SummaryComponent):
 
     return hidden_transfer_cells_5d, hidden_transfer_cells_5d
 
-  def _build_decoding(self, input_tensor, hidden_tensor):  # pylint: disable=W0613
+  def _build_decoding(self, target_shape, hidden_tensor):  # pylint: disable=W0613
     """Build the decoder (optionally without using tied weights)"""
 
     # Untied weights
     # -----------------------------------------------------------------
-    deconv_shape = self._input_shape
-    deconv_shape[0] = self._hparams.batch_size
-    deconv_area = np.prod(deconv_shape[1:])
+    #deconv_shape = self._input_shape
+    #deconv_shape[0] = self._hparams.batch_size
+    target_area = np.prod(target_shape[1:])
+
+    # Make the decoding layer (TODO: Should be conv too!)
     hidden_area = np.prod(hidden_tensor.get_shape()[1:])
-
     hidden_reshape = tf.reshape(hidden_tensor, shape=[self._hparams.batch_size, hidden_area])
+    decode_layer_name = 'deconvolved'
     decoding_weighted_sum = tf.layers.dense(
-        inputs=hidden_reshape, units=deconv_area,
-        activation=None, use_bias=self._hparams.decode_bias, name='deconvolved')  # Note we use our own nonlinearity, elsewhere.
+        inputs=hidden_reshape, units=target_area,
+        activation=None, use_bias=self._hparams.decode_bias, name=decode_layer_name)  # Note we use our own nonlinearity, elsewhere.
 
-    decoding_reshape = tf.reshape(decoding_weighted_sum, deconv_shape, name='decoding_reshape')
-    logging.debug(decoding_reshape)
+    with tf.variable_scope(decode_layer_name, reuse=True):
+      self._weights_d = tf.get_variable('kernel')
+      if self._hparams.decode_bias:
+        self._bias_d = tf.get_variable('bias')
 
-    return decoding_reshape
+    decode_transfer, _ = activation_fn(decoding_weighted_sum, self._hparams.decode_nonlinearity)
+    decoding_logits_reshape = tf.reshape(decoding_weighted_sum, target_shape)
+    decoding_transfer_reshape = tf.reshape(decode_transfer, target_shape)
+    return decoding_transfer_reshape, decoding_logits_reshape
+
+  def _build_l2_loss(self, dendrite, w, b, scale, other_losses):
+    if scale <= 0.0:
+      logging.info('Dendrite: ' + dendrite + '. Skipping, L2=0.')
+      return other_losses
+
+    if w is None:
+      logging.info('Dendrite: ' + dendrite + '. Skipping, W=None.')
+      return other_losses
+
+    logging.info('Dendrite: ' + dendrite + '. Adding L2 loss (W): ' + str(scale))
+    l2_loss_w = tf.nn.l2_loss(w)
+    if b is not None:
+      logging.info('Dendrite: ' + dendrite + '. Adding L2 loss (b): ' + str(scale))
+      l2_loss_b = tf.nn.l2_loss(b)
+      l2_loss = tf.reduce_sum(l2_loss_w) + tf.reduce_sum(l2_loss_b)
+    else:
+      l2_loss = tf.reduce_sum(l2_loss_w)
+
+    l2_loss_scaled = l2_loss * scale
+
+    if other_losses is None:
+      all_losses = l2_loss_scaled
+    else:
+      all_losses = other_losses + l2_loss_scaled
+    return all_losses
+
+  def _build_extra_losses(self):
+    """Defines some extra criteria to optimize - in this case regularization"""
+    l2_losses = None
+    l2_losses = self._build_l2_loss('f', self._weights_f, self._bias_f, self._hparams.l2_f, l2_losses )
+    l2_losses = self._build_l2_loss('r', self._weights_r, self._bias_r, self._hparams.l2_r, l2_losses )
+    l2_losses = self._build_l2_loss('b', self._weights_b, self._bias_b, self._hparams.l2_b, l2_losses )
+    l2_losses = self._build_l2_loss('d', self._weights_d, self._bias_d, self._hparams.l2_d, l2_losses )
+    return l2_losses
 
   def _build_optimizer(self):
     """Setup the training operations"""
-    target = self._input_values
+    #target = self._input_values
+    target, target_shape = self.get_target()
     prediction = self.get_op(self.decoding)
+    prediction_logits = self.get_op(self.decoding_logits)
     with tf.variable_scope('optimizer', reuse=tf.AUTO_REUSE):
       self._optimizer = tf_create_optimizer(self._hparams)
-      loss_op_1 = self._build_loss_fn(target, prediction)
-      self._dual.set_op(self.loss, loss_op_1)
-      training_op = self._optimizer.minimize(loss_op_1, global_step=tf.train.get_or_create_global_step(),
-                                             name='training_op')
+
+      prediction_loss_op = self._build_loss_fn(target, prediction, prediction_logits)
+      extra_loss_op = self._build_extra_losses()  # e.g. regularization
+      loss_op = prediction_loss_op
+      if extra_loss_op is not None:
+        all_losses = []
+        all_losses.append(prediction_loss_op)
+        all_losses.append(extra_loss_op)
+        loss_op = tf.add_n(all_losses)
+      self._dual.set_op(self.loss, loss_op)
+
+      training_op = self._optimizer.minimize(loss_op, global_step=tf.train.get_or_create_global_step(), name='training_op')
       self._dual.set_op(self.training, training_op)
 
-  def _build_loss_fn(self, target, output):
+  def _build_loss_fn(self, target, output, output_logits=None):
     if self._hparams.loss_type == 'mse':
       return tf.losses.mean_squared_error(target, output)
-    if self._hparams.loss_type == 'sxe':
-      return tf.losses.sigmoid_cross_entropy(target, output)
-
-    raise NotImplementedError('Loss function not implemented: ' + str(self._hparams.loss_type))
+    elif self._hparams.loss_type == 'sigmoid-ce':
+       return tf.losses.sigmoid_cross_entropy(multi_class_labels=target, logits=output_logits)
+    elif self._hparams.loss_type == 'softmax-ce':
+       return tf.losses.softmax_cross_entropy(onehot_labels=target, logits=output_logits)
+    else:
+      raise NotImplementedError('Loss function not implemented: ' + str(self._hparams.loss_type))
 
   # COMPONENT INTERFACE ------------------------------------------------------------------
   def update_feed_dict(self, feed_dict, batch_type='training'):

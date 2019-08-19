@@ -33,7 +33,7 @@ from pagi.utils.embedding import Embedding
 from pagi.workflows.workflow import Workflow
 
 from rsm.components.sequence_memory_stack import SequenceMemoryStack
-from rsm.components.text_embedding_decoder import TextEmbeddingDecoder
+from rsm.components.token_embedding_decoder import TokenEmbeddingDecoder
 
 class LanguageWorkflow(Workflow):
   """Next word prediction perplexity for natural language modelling."""
@@ -41,28 +41,30 @@ class LanguageWorkflow(Workflow):
   @staticmethod
   def default_opts():
     """Builds an HParam object with default workflow options."""
-    return tf.contrib.training.HParams(
-        evaluate=True,
-        train=True,
-        corpus_train="",
-        corpus_test="",
-        num_testing_batches=3,
-        training_progress_interval=0,
-        testing_progress_interval=0,
-        average_accuracy_interval=100,
-        embedding_type='sparse',
-        embedding_file="",
-        embedding_w=10,
-        embedding_h=10,
-        embedding_sparsity=20,
-        max_sequence_length=0,  # Can truncate to this length, else corpus length
-        stochastic_forgetting_probability=0.0,
-        measure_perplexity=False,
-        measure_interval=-1,
-        primer=None,
-        test_distributions_filename=None,
-        debug=False
-    )
+    hparams = Workflow.default_opts()
+
+    # Training features
+    hparams.add_hparam('random_offsets', True)
+    hparams.add_hparam('max_sequence_length', 0)
+    hparams.add_hparam('stochastic_forgetting_probability', 0.0)
+
+    # Testing & measurement
+    hparams.add_hparam('num_testing_batches', 1)
+    hparams.add_hparam('average_accuracy_interval', 100)
+    hparams.add_hparam('perplexity_interval', 100)
+    hparams.add_hparam('debug_start', -1)
+    hparams.add_hparam('test_primer', None)
+    hparams.add_hparam('test_distributions_filename', None)
+
+    # Dataset & embedding
+    hparams.add_hparam('corpus_train', '')
+    hparams.add_hparam('corpus_test', '')
+
+    hparams.add_hparam('embedding_file', '')
+    hparams.add_hparam('token_file', '')
+    hparams.add_hparam('token_delimiter', ',')
+
+    return hparams
 
   def _setup_dataset(self):
     """Setup the dataset and retrieve inputs, labels and initializers"""
@@ -73,19 +75,21 @@ class LanguageWorkflow(Workflow):
 
       self._freq_cells_training = None
       self._freq_cells_testing = None
-      corpus_train_file = self._opts['corpus_train']
-      corpus_test_file = self._opts['corpus_test']
-      embedding_type = self._opts['embedding_type']
-      embedding_file = self._opts['embedding_file']
-      embedding_w = self._opts['embedding_w']
-      embedding_h = self._opts['embedding_h']
-      embedding_sparsity = self._opts['embedding_sparsity']
+
+      random_offsets = self._opts['random_offsets']
       max_sequence_length = self._opts['max_sequence_length']
 
-      embedding_shape = [int(embedding_h), int(embedding_w)]
+      corpus_train_file = self._opts['corpus_train']
+      corpus_test_file = self._opts['corpus_test']
+
+      embedding_file = self._opts['embedding_file']
+      token_file = self._opts['token_file']
+      token_delimiter =  self._opts['token_delimiter']
+
       self._dataset = self._dataset_type(self._dataset_location)
-      self._dataset.setup(int(self._hparams.batch_size), corpus_train_file, corpus_test_file, embedding_type,
-                          embedding_file, embedding_shape, embedding_sparsity, max_sequence_length)
+      self._dataset.setup(int(self._hparams.batch_size), random_offsets, max_sequence_length, 
+                          corpus_train_file, corpus_test_file,
+                          token_file, embedding_file, token_delimiter)
 
       # Dataset for training
       train_dataset = self._dataset.get_train(options=self._opts)
@@ -136,7 +140,7 @@ class LanguageWorkflow(Workflow):
     labels_one_hot_shape = labels_one_hot.get_shape().as_list()
 
     decoder_name = 'decoder'
-    decoder = TextEmbeddingDecoder(decoder_name, self._dataset)
+    decoder = TokenEmbeddingDecoder(decoder_name, self._dataset)
 
     self._component = self._component_type()
     self._component.build(self._inputs, self._dataset.shape,
@@ -196,16 +200,17 @@ class LanguageWorkflow(Workflow):
     # No effect if P=0
     self._component.forget_history(self._session, stochastic_forgetting_probability)
 
+    # Option to let dataset decide when to clear
     # History update with per-batch-sample flag for whether to clear
-    update_history = False
-    if update_history:
+    max_sequence_length = self._opts['max_sequence_length']
+    if max_sequence_length > 0:
       subset = self._dataset.get_subset(data_subset)
       history_mask = subset['mask']
       self._component.update_history(self._session, history_mask)
 
     # Optionally load a primer text, then self-generate the rest of the test corpus
     # i.e. generative mode.
-    primer = self._opts['primer']
+    primer = self._opts['test_primer']
     if primer is not None:
 
       word_index = global_step
@@ -258,9 +263,8 @@ class LanguageWorkflow(Workflow):
       self._moving_average.update('accuracy', accuracy, self._writer, batch_type, batch=global_step,
                                   prefix=self._component.name)
 
-      measure_perplexity = self._opts['measure_perplexity']
-      measure_interval = self._opts['measure_interval']
-      if measure_perplexity:
+      perplexity_interval = self._opts['perplexity_interval']
+      if perplexity_interval >= 0:
 
         # Calculate cumulative loss and accurate perplexity
         prediction_loss = self._component.get_values(SequenceMemoryStack.ensemble_loss_sum)
@@ -269,22 +273,18 @@ class LanguageWorkflow(Workflow):
         self._loss_mean = self._loss_sum / self._loss_samples
         self._perplexity = math.exp(self._loss_mean)
 
-        print_perplexity = False
-
-        if print_perplexity:
-          logging.info('Perplexity %f Loss mean %f  Samples %f', self._perplexity, self._loss_mean, self._loss_samples)
-
-        if measure_interval > 0:
+        if perplexity_interval > 0:
           samples_batches = int(self._loss_samples / self._hparams.batch_size)
-          if samples_batches == measure_interval:
+          if samples_batches == perplexity_interval:
+            logging.info('Perplexity %f Loss mean %f  Samples %f', self._perplexity, self._loss_mean, self._loss_samples)
             self._write_perplexity_summary(batch_type, global_step, self._perplexity)
             self._loss_sum = 0.0
             self._loss_samples = 0
         else:
           self._write_perplexity_summary(batch_type, global_step, self._perplexity)
 
-    debug_errors = self._opts['debug']
-    if debug_errors:  #and global_step > 100:
+    debug_start = self._opts['debug_start']
+    if debug_start >= 0 and global_step > debug_start:
       predictions = self._component.get_predicted_distribution()
       n = 120  # OR: 25, 120
       # max_perplexity = 5000.0
@@ -320,7 +320,7 @@ class LanguageWorkflow(Workflow):
       pl_labels.append(label_word + ' -')
 
       prediction_rank = np.where(logits_sorted == label)[0]
-      print('red rank', prediction_rank)
+      print('Rank of true label: ', prediction_rank)
 
       for i in range(0, n):
         index = logits_sorted[i]
@@ -379,7 +379,7 @@ class LanguageWorkflow(Workflow):
       plt.show()
 
     # Output as feedback for next step
-    self._component.update_feedback()
+    self._component.update_recurrent_and_feedback()
     self._component.update_statistics(self._session) # only when training
 
     return feed_dict
@@ -387,7 +387,7 @@ class LanguageWorkflow(Workflow):
   def _write_perplexity_summary(self, batch_type, batch, perplexity):
     """Create off-graph TensorBoard value summaries, and write events to disk."""
     summary = tf.Summary()
-    summary.value.add(tag=self._component.name + '/summaries/' + batch_type + '/test_state_perplexity',
+    summary.value.add(tag=self._component.name + '/summaries/' + batch_type + '/average_perplexity',
                       simple_value=perplexity)
     self._writer.add_summary(summary, batch)
     self._writer.flush()

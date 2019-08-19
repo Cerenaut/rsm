@@ -1,22 +1,23 @@
 {
     "experiment-options":{
-    "workflow":"workflows.language_workflow",
-    "dataset":"datasets.text_embedding_dataset",
-    "component":"components.sequence_memory_stack",
+    "workflow":"rsm.workflows.language_workflow",
+    "dataset":"rsm.datasets.token_embedding_dataset",
+    "component":"rsm.components.sequence_memory_stack",
     "train":true,
     "evaluate":true,
     "seed":42,
-    "batches":250,
+    "batches":10000,
     "hparams_override":{
 
       "cache_decay":0.99,
       "cache_smart":true,
 
+      "decode_mass":0.99,
       "file_mass":0.0,
       "uniform_mass":0.01,
-      "input_mass":0.3,
-      "layer_mass":0.5,
-      "cache_mass":0.19,
+      "input_mass":0.0,
+      "layer_mass":0.0,
+      "cache_mass":0.0,
 
       "predictor_training_interval": [0,-1],
       "predictor_optimize": "accuracy",
@@ -25,48 +26,53 @@
       "predictor_keep_rate":1.0,
       "predictor_l2_regularizer":3.5,
       "predictor_label_smoothing":0.0,
+      "predictor_integrate_input":true,
 
       "memory_training_interval":[0,-1],
-      "integrate_prediction_input":[true],
 
       "num_layers":1,
-      "batch_size":1,
-      "sparsity":[20],
-      "cols":[600],
-      "cells_per_col":[8],
-      "dends_per_cell":[1],
-      "freq_min":0.01,
-      "freq_update_interval":40,
-      "freq_learning_rate":0.1,
+      "batch_size":50,
+      "sparsity":[25],
+      "cols":[300],
+      "cells_per_col":[4],
 
-      "inhibition_decay":[0.05],
-      "feedback_decay_rate":[0.8],
-      "feedback_keep_rate":[0.5],
+      "freq_update_interval":50,
+
+      "hidden_nonlinearity":"tanh",
+      "decode_nonlinearity":["none"],
+      "loss_type":"mse",
+
+      "inhibition_decay":[0.85],
+      "feedback_decay_rate":[0.0],
+      "feedback_keep_rate":[1.0],
       "feedback_norm":[true],
 
-      "filters_field_width": 2,
-      "filters_field_height": 14,
-      "filters_field_stride": 20,
-      "lifetime_sparsity_cols": false,
-      "lifetime_sparsity_dends": false
+      "filters_field_width": [20],
+      "filters_field_height": [2],
+      "filters_field_stride": [20],
+
+      "summarize_distributions":true,
+      "memory_summarize_input":true,
+      "memory_summarize_decoding":true
+
     }
   },
   "workflow-options":{
-    "debug":false,
+    "debug_start":-1,
     "testing_progress_interval":1,
     "num_testing_batches":10,
+    "perplexity_interval":10,
 
+    "random_offsets":true,
     "max_sequence_length":0,    
-    "stochastic_forgetting_probability":0.05,
-    "clear_before_test":false,
+    "stochastic_forgetting_probability":0.0,
 
-    "corpus_train":"/home/dave/agi/penn-treebank/simple-examples/data/ptb.train.txt",
-    "corpus_test":"/home/dave/agi/penn-treebank/simple-examples/data/ptb.test.txt",
+    "corpus_train":"/home/dave/dev/pagi/data/ptb.train-short.txt",
+    "corpus_test":"/home/dave/dev/pagi/data/ptb.train-short.txt",
 
-    "embedding_file":"./ptb.txt",
-    "embedding_type":"dense",
-    "embedding_w":2,
-    "embedding_h":14
+    "token_delimiter":"\n",
+    "token_file":"/home/dave/dev/pagi/rsm/rsm/nlp/ptb.tokens.txt",
+    "embedding_file":"/home/dave/dev/pagi/rsm/rsm/nlp/ptb.token_paths.npy"
   },
   "parameter-sweeps": {
     "hparams": [
