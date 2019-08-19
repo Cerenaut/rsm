@@ -3,19 +3,15 @@
     "workflow": "rsm.workflows.composite_gan_video_workflow",
     "dataset": "rsm.datasets.bouncing_balls_dataset",
     "component": "rsm.components.composite_rsm_stack",
-    "batches": 25000,
-
-    "checkpoint": "/home/incubator/agief-remote-run/rsm/run/summaries_20190819-111534/model.ckpt-25000",
-    "checkpoint_load_scope": "composite-rsm-stack/rsm_stack",
-    "checkpoint_frozen_scope": "composite-rsm-stack/rsm_stack",
+    "batches": 100000,
 
     "hparams_override": {
-      "batch_size": 128,
+      "batch_size": 300,
       "build_ae": false,
       "build_rsm": true,
-      "build_gan": true,
+      "build_gan": false,
 
-      "ae_stack_batch_size": 128,
+      "ae_stack_batch_size": 300,
       "ae_stack_num_layers": 1,
       "ae_stack_summarize_decoding": [true, true],
       "ae_stack_encoder_nonlinearity": ["none"],
@@ -29,7 +25,7 @@
       "ae_stack_sparsity_output_factor": [1.5],
       "ae_stack_use_lifetime_sparsity": [true, true],
 
-      "rsm_stack_batch_size": 128,
+      "rsm_stack_batch_size": 300,
       "rsm_stack_loss_type": "mse",
       "rsm_stack_memory_training_interval": [0, -1],
       "rsm_stack_memory_summarize_input": false,
@@ -57,7 +53,7 @@
       "rsm_stack_lifetime_sparsity_cols": false,
       "rsm_stack_lifetime_sparsity_dends": false,
 
-      "gan_batch_size": 128,
+      "gan_batch_size": 300,
       "gan_generator_num_layers": 1,
       "gan_generator_filters": [128],
       "gan_generator_filters_field_width": [1],

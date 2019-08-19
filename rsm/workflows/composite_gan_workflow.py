@@ -21,18 +21,18 @@ from __future__ import print_function
 
 import numpy as np
 
-from pagi.workflows.workflow import Workflow
+from pagi.workflows.composite_workflow import CompositeWorkflow
 
 from rsm.components.composite_rsm_stack import CompositeRSMStack
 
 
-class CompositeGANWorkflow(Workflow):
-  """A simple workflow for GANs."""
+class CompositeGANWorkflow(CompositeWorkflow):
+  """A composite workflow for GANs."""
 
   @staticmethod
   def default_opts():
     """Builds an HParam object with default workflow options."""
-    opts = Workflow.default_opts()
+    opts = CompositeWorkflow.default_opts()
     opts.add_hparam('pretrain_steps', 2000)
     return opts
 
@@ -46,10 +46,15 @@ class CompositeGANWorkflow(Workflow):
 
   def _do_gan_batch(self, batch_type, fetched, data_subset, global_step):
     """Perform a discriminator step, followed by generator step."""
-    if self._hparams.build_gan and (batch_type == 'encoding' or global_step > self._opts['pretrain_steps']):
+    if not self._hparams.build_gan:
+      return
+
+    gan_batch_type = batch_type[self._component.name + '/' + self._component.gan_name]
+
+    if gan_batch_type == 'encoding' or global_step > self._opts['pretrain_steps']:
       disc_input_noise = 0.0
 
-      if batch_type == 'training':
+      if gan_batch_type == 'training':
         gan_step = int(global_step % (self._opts['pretrain_steps'] + 1e-8))
         disc_input_noise = self._disc_input_noise[gan_step]
 
@@ -68,12 +73,12 @@ class CompositeGANWorkflow(Workflow):
       gen_inputs = self._component.get_gan_inputs()
 
       fetches, feed_dict = build_feed_dict(gen_inputs, real_inputs)
-      batch_type = self._component.gan_name + '-discriminator_' + batch_type
-      self._do_batch(fetches, feed_dict, batch_type, data_subset, global_step)
+      disc_batch_type = self._component.gan_name + '-discriminator_' + gan_batch_type
+      self._do_batch(fetches, feed_dict, disc_batch_type, data_subset, global_step)
 
       fetches, feed_dict = build_feed_dict(gen_inputs, real_inputs)
-      batch_type = self._component.gan_name + '-generator_' + batch_type
-      self._do_batch(fetches, feed_dict, batch_type, data_subset, global_step)
+      gen_batch_type = self._component.gan_name + '-generator_' + gan_batch_type
+      self._do_batch(fetches, feed_dict, gen_batch_type, data_subset, global_step)
 
   def training(self, dataset_handle, global_step):  # pylint: disable=arguments-differ
     """The training procedure within the batch loop"""
@@ -82,7 +87,7 @@ class CompositeGANWorkflow(Workflow):
 
     batch_type = 'training'
     if self._freeze_training or global_step > self._opts['pretrain_steps']:
-      batch_type = 'encoding'
+      batch_type = self._setup_train_batch_types()
 
     fetches = self._build_prior_fetches()
     feed_dict = self._build_prior_feed_dict(dataset_handle)
@@ -90,7 +95,7 @@ class CompositeGANWorkflow(Workflow):
 
     batch_type = 'training'
     if self._freeze_training:
-      batch_type = 'encoding'
+      batch_type = self._setup_train_batch_types()
 
     self._do_gan_batch(batch_type, fetched, data_subset, global_step)
 
