@@ -37,6 +37,8 @@ class CompositeRSMStack(CompositeComponent):
   rsm_name = 'rsm_stack'
   gan_name = 'gan'
 
+  gan_rsm_input = 'decoding'
+
   @staticmethod
   def default_hparams():
     """Builds an HParam object with default hyperparameters."""
@@ -159,7 +161,12 @@ class CompositeRSMStack(CompositeComponent):
     self._add_sub_component(rsm_stack, self.rsm_name)
 
     self._layers = self.get_sub_component(self.rsm_name).get_layers()
-    input_values_next = self._layers[-1].get_op(SequenceMemoryLayer.encoding)
+
+    if self.gan_rsm_input == 'decoding':
+      input_values_next = self._layers[-1].get_op(SequenceMemoryLayer.decoding)
+    else:
+      input_values_next = self._layers[-1].get_op(SequenceMemoryLayer.encoding)
+
     input_shape_next = input_values_next.get_shape().as_list()
 
     return input_values_next, input_shape_next
@@ -180,9 +187,13 @@ class CompositeRSMStack(CompositeComponent):
 
   def get_gan_inputs(self):
     if self._hparams.build_rsm:
+      if self.gan_rsm_input == 'decoding':
+        return self.get_sub_component(CompositeRSMStack.rsm_name).get_layer(-1).get_values(SequenceMemoryLayer.decoding)
       return self.get_sub_component(CompositeRSMStack.rsm_name).get_layer(-1).get_values(SequenceMemoryLayer.encoding)
+
     if self._hparams.build_ae:
       return self.get_sub_component(CompositeRSMStack.ae_name).get_sub_component('output').get_encoding()
+
     return self._input_values
 
   # --------------------------------------------------------------------------
