@@ -61,6 +61,7 @@ class SequenceMemoryLayer(SummaryComponent):
         hidden_nonlinearity='tanh', # used for hidden layer only
         decode_nonlinearity='none', # Used for decoding
         inhibition_decay=0.1,  # controls refractory period
+        boost_factor=0.0,
 
         predictor_norm_input=True,
         predictor_integrate_input=False,  # default: only current cells
@@ -169,6 +170,7 @@ class SequenceMemoryLayer(SummaryComponent):
     if ((self._freq_update_count % self._hparams.freq_update_interval) == 0) and (self._freq_update_count > 0):
       self._freq_update_count = 0
 
+      logging.info('Updating freq...')
       self._update_freq_with_usage(self.usage_cell, self.freq_cell)
       self._update_freq_with_usage(self.usage_col, self.freq_col)
 
@@ -845,21 +847,11 @@ class SequenceMemoryLayer(SummaryComponent):
     cells_5d = tf.reshape(cells_4d, cells_5d_shape)
     return cells_5d
 
-  def _build_filtering(self, f_encoding_cells_5d, r_encoding_cells_5d, b_encoding_cells_5d):
-    """Build filtering/masking for specified encoding."""
-
-    shape_cells_5d = f_encoding_cells_5d.get_shape().as_list()
-    h = shape_cells_5d[1]
-    w = shape_cells_5d[2]
-
+  def _build_inhibition(self, i_encoding_cells_5d):
     # ---------------------------------------------------------------------------------------------------------------
     # INHIBITION - retard the activation of dendrites that fired recently.
     # inhibition shape = [b,h,w,col,cell,d]
     # ---------------------------------------------------------------------------------------------------------------
-    i_encoding_cells_5d = f_encoding_cells_5d + r_encoding_cells_5d  # i = integrated
-    if self.use_feedback():
-      i_encoding_cells_5d = i_encoding_cells_5d + b_encoding_cells_5d
-
     # Refractory period
     # Inhibition is max (1) and decays to min (0)
     # So refractory weight is 1-1=0, returning to 1 over time.
@@ -875,11 +867,56 @@ class SequenceMemoryLayer(SummaryComponent):
 
     # Apply inhibition/refraction
     refracted_cells_5d = pos_i_encoding_cells_5d * refractory_cells_5d
+    return refracted_cells_5d
+
+  def _build_boosting(self, i_encoding_cells_5d):
+    boost_shape = [1, 1, 1, self._hparams.cols, self._hparams.cells_per_col]
+    freq_cell_pl = self._dual.get_pl(self.freq_cell)  # [cols * cells_per_col] 1d
+    num_cells = self._hparams.cols * self._hparams.cells_per_col
+    freq_target = self._hparams.sparsity / num_cells  # k/n where n is num cells
+    # e.g. cols=600 cell/col=3 num_cells=1800
+    # sparsity = k = 95
+    # 95/1800 = 0.052777778  ie 5%
+    # Say freq = 0
+    # exp(0.052-0) = 1.053375743
+    boost_cells_1d = tf.math.exp(freq_target - freq_cell_pl) * self._hparams.boost_factor
+    self._dual.set_op('boost', boost_cells_1d)
+    boost_cells_5d = tf.reshape(boost_cells_1d, boost_shape)
+    boosted_cell_5d = i_encoding_cells_5d * boost_cells_5d
+    return boosted_cell_5d
+
+  def use_boosting(self):
+    if self._hparams.boost_factor > 0.0:
+      return True
+    return False
+
+  def _build_filtering(self, f_encoding_cells_5d, r_encoding_cells_5d, b_encoding_cells_5d):
+    """Build filtering/masking for specified encoding."""
+
+    shape_cells_5d = f_encoding_cells_5d.get_shape().as_list()
+    h = shape_cells_5d[1]
+    w = shape_cells_5d[2]
+
+    # ---------------------------------------------------------------------------------------------------------------
+    # INTEGRATE DENDRITES
+    # ---------------------------------------------------------------------------------------------------------------
+    i_encoding_cells_5d = f_encoding_cells_5d + r_encoding_cells_5d  # i = integrated
+    if self.use_feedback():
+      i_encoding_cells_5d = i_encoding_cells_5d + b_encoding_cells_5d
+
+
+    # ---------------------------------------------------------------------------------------------------------------
+    # RANKING METRIC
+    # ---------------------------------------------------------------------------------------------------------------
+    if self.use_boosting():
+      ranking_input_cells_5d = self._build_boosting(i_encoding_cells_5d)
+    else:
+      ranking_input_cells_5d = self._build_inhibition(i_encoding_cells_5d)
 
     # reduce to cols
     # take best(=max) dendrite per cell, and best cell per col.
-    ranking_input_cols_4d = tf.reduce_max(refracted_cells_5d, axis=[4])
-    ranking_input_cells_5d = refracted_cells_5d
+    #ranking_input_cells_5d = refracted_cells_5d
+    ranking_input_cols_4d = tf.reduce_max(ranking_input_cells_5d, axis=[4])
 
     # ---------------------------------------------------------------------------------------------------------------
     # TOP-k RANKING (Cols)
@@ -899,10 +936,14 @@ class SequenceMemoryLayer(SummaryComponent):
     testing_mask_cells_5d = self._build_dendrite_mask(h, w, ranking_input_cells_5d, mask_cols_5d,
                                                       testing_lifetime_sparsity_dends, lifetime_mask_dend_1d)
 
-    # Update cells' inhibition
-    inhibition_cells_5d = inhibition_cells_5d_pl * self._hparams.inhibition_decay # decay old inh
-    inhibition_cells_5d = tf.maximum(training_mask_cells_5d, inhibition_cells_5d)  # this should be per batch sample not only per dend
-    self._dual.set_op(self.inhibition, inhibition_cells_5d)
+    #if not self.use_boosting():
+    self._build_update_inhibition(training_mask_cells_5d)
+    #self._build_update_boosting(training_mask_cells_5d)
+
+    # # Update cells' inhibition
+    # inhibition_cells_5d = inhibition_cells_5d_pl * self._hparams.inhibition_decay # decay old inh
+    # inhibition_cells_5d = tf.maximum(training_mask_cells_5d, inhibition_cells_5d)  # this should be per batch sample not only per dend
+    # self._dual.set_op(self.inhibition, inhibition_cells_5d)
 
     # Update usage (test mask doesnt include lifetime bits)
     if self.use_freq():
@@ -913,6 +954,18 @@ class SequenceMemoryLayer(SummaryComponent):
         f_encoding_cells_5d, r_encoding_cells_5d, b_encoding_cells_5d, training_mask_cells_5d)
 
     return training_filtered_cells_5d, testing_filtered_cells_5d
+
+  def _build_update_inhibition(self, training_mask_cells_5d):
+    # Update cells' inhibition
+    inhibition_cells_5d_pl = self._dual.get_pl(self.inhibition)
+    inhibition_cells_5d = inhibition_cells_5d_pl * self._hparams.inhibition_decay # decay old inh
+    inhibition_cells_5d = tf.maximum(training_mask_cells_5d, inhibition_cells_5d)  # this should be per batch sample not only per dend
+    self._dual.set_op(self.inhibition, inhibition_cells_5d)
+
+  # def _build_update_boosting(self, training_mask_cells_5d):
+  #   # Update cells' boost given activity
+  #   boost_cells_5d_pl = self._dual.get_pl(self.inhibition)
+  #   self._dual.set_op(self.inhibition, boost_cells_5d)
 
   def _build_update_usage(self, mask_cells_5d):
     """Build graph op to update usage."""
@@ -1266,5 +1319,10 @@ class SequenceMemoryLayer(SummaryComponent):
       lifetime_mask = self._dual.get(self.lifetime_mask).get_pl()
       lifetime_mask_summary = tf.summary.scalar('lifetime-mask-sum', tf.reduce_sum(tf.to_float(lifetime_mask)))
       summaries.append(lifetime_mask_summary)
+
+      if self.use_boosting():
+        boost_cell = self._dual.get_op('boost')
+        summaries.append(tf.summary.histogram('boost_cell_hist', boost_cell))
+
 
     return summaries

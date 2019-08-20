@@ -131,6 +131,7 @@ class SequenceMemoryStack(SummaryComponent):
         hidden_nonlinearity='tanh', # used for hidden layer only
         decode_nonlinearity=['none'], # Used for decoding
 
+        boost_factor=[0.0],  # Enables boost control if nonzero, replaces inhibition
         inhibition_decay=[0.1],  # controls refractory period
         feedback_decay_rate=[0.0],  # Optional integrated/exp decay feedback
         feedback_keep_rate=[1.0],  # Optional dropout on feedback
@@ -499,6 +500,7 @@ class SequenceMemoryStack(SummaryComponent):
       layer_hparams.l2_d = self._hparams.l2_d[i]
 
       layer_hparams.decode_nonlinearity = self._hparams.decode_nonlinearity[i]
+      layer_hparams.boost_factor = self._hparams.boost_factor[i]
       layer_hparams.inhibition_decay = self._hparams.inhibition_decay[i]
       layer_hparams.feedback_decay_rate = self._hparams.feedback_decay_rate[i]
       layer_hparams.feedback_keep_rate = self._hparams.feedback_keep_rate[i]
