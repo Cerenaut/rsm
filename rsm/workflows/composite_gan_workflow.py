@@ -20,7 +20,6 @@ from __future__ import division
 from __future__ import print_function
 
 import numpy as np
-
 from pagi.workflows.composite_workflow import CompositeWorkflow
 
 from rsm.components.composite_rsm_stack import CompositeRSMStack
@@ -49,7 +48,9 @@ class CompositeGANWorkflow(CompositeWorkflow):
     if not self._hparams.build_gan:
       return
 
-    gan_batch_type = batch_type[self._component.name + '/' + self._component.gan_name]
+    gan_batch_type = batch_type
+    if isinstance(batch_type, dict):
+      gan_batch_type = batch_type[self._component.name + '/' + self._component.gan_name]
 
     if gan_batch_type == 'encoding' or global_step > self._opts['pretrain_steps']:
       disc_input_noise = 0.0
@@ -69,7 +70,7 @@ class CompositeGANWorkflow(CompositeWorkflow):
         return fetches, feed_dict
 
       real_inputs = fetched['inputs']
-      real_inputs = 2 * real_inputs - 1  # Normalize to [-1, 1]
+      # real_inputs = 2 * real_inputs - 1  # Normalize to [-1, 1]
       gen_inputs = self._component.get_gan_inputs()
 
       fetches, feed_dict = build_feed_dict(gen_inputs, real_inputs)

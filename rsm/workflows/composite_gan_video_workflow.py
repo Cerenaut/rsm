@@ -19,7 +19,6 @@ from __future__ import absolute_import
 from __future__ import division
 from __future__ import print_function
 
-import numpy as np
 import tensorflow as tf
 
 from rsm.components.sequence_memory_layer import SequenceMemoryLayer
@@ -42,6 +41,8 @@ class CompositeGANVideoWorkflow(CompositeGANWorkflow, CompositeVideoWorkflow):
     for key, value in cvw_opts.values().items():
       if key not in opts:
         opts.add_hparam(key, value)
+
+    opts.add_hparam('frame_output', 'gan')
 
     return opts
 
@@ -70,19 +71,11 @@ class CompositeGANVideoWorkflow(CompositeGANWorkflow, CompositeVideoWorkflow):
     return fetches, feed_dict, fetched
 
   def get_decoded_frame(self):
-    use_output = 'gan'
-
-    gan_output = self._component.get_sub_component('gan').get_output()
-    rsm_output = self._component.get_sub_component('rsm_stack').get_layer(0).get_values(SequenceMemoryLayer.decoding)
-
-    decoded_frame = gan_output
-    if use_output == 'rsm':
+    if self._opts['frame_output'] == 'rsm':
+      rsm_output = self._component.get_sub_component('rsm_stack').get_layer(0).get_values(SequenceMemoryLayer.decoding)
       decoded_frame = rsm_output
-
-    # Normalize to [0, 1]
-    decoded_frame = (decoded_frame - np.min(decoded_frame)) / (np.max(decoded_frame) - np.min(decoded_frame))
-
-    assert np.min(decoded_frame) == 0.0
-    assert np.max(decoded_frame) == 1.0
+    elif self._opts['frame_output'] == 'gan':
+      gan_output = self._component.get_sub_component('gan').get_output()
+      decoded_frame = gan_output
 
     return decoded_frame
