@@ -23,8 +23,8 @@
       "predictor_optimize": "reconstruction",
       "predictor_nonlinearity": ["leaky-relu", "leaky-relu"],
 
-      "sparsity": [20],
-      "cols": [600],
+      "sparsity": [5],
+      "cols": [32],
       "cells_per_col": [8],
       "freq_min": 0.01,
       "freq_update_interval": 40,
@@ -35,9 +35,11 @@
       "feedback_keep_rate": [0.5],
       "feedback_norm": [true],
 
-      "filters_field_width": [30],
-      "filters_field_height": [30],
-      "filters_field_stride": [30],
+      "decode_mode": ["conv"],
+
+      "filters_field_width": [6],
+      "filters_field_height": [6],
+      "filters_field_stride": [3],
 
       "lifetime_sparsity_cols": false,
       "lifetime_sparsity_dends": false

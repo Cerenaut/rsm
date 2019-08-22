@@ -83,7 +83,7 @@ class SequenceMemoryStack(SummaryComponent):
         layer_mass=1.0,  # Default to only use layer
         ensemble_norm_eps=0.0000000001,  # 0.0001%
 
-        mode = 'predict-input',
+        mode='predict-input',
         #autoencode=False,
 
         # Memory options
@@ -130,6 +130,7 @@ class SequenceMemoryStack(SummaryComponent):
 
         hidden_nonlinearity='tanh', # used for hidden layer only
         decode_nonlinearity=['none'], # Used for decoding
+        decode_mode=['fc'],
 
         boost_factor=[0.0],  # Enables boost control if nonzero, replaces inhibition
         inhibition_decay=[0.1],  # controls refractory period
@@ -499,6 +500,7 @@ class SequenceMemoryStack(SummaryComponent):
       layer_hparams.l2_b = self._hparams.l2_b[i]
       layer_hparams.l2_d = self._hparams.l2_d[i]
 
+      layer_hparams.decode_mode = self._hparams.decode_mode[i]
       layer_hparams.decode_nonlinearity = self._hparams.decode_nonlinearity[i]
       layer_hparams.boost_factor = self._hparams.boost_factor[i]
       layer_hparams.inhibition_decay = self._hparams.inhibition_decay[i]
@@ -744,6 +746,8 @@ class SequenceMemoryStack(SummaryComponent):
     super().build_summaries(batch_types, max_outputs, scope)
 
   def _build_summaries(self, batch_type, max_outputs=3):
+    """Build summaries."""
+    del batch_type
 
     # Ensemble interpolation
     summaries = []
@@ -760,12 +764,14 @@ class SequenceMemoryStack(SummaryComponent):
       ensemble_distribution = self._dual.get_op(self.ensemble_distribution)
       #ensemble_distribution = tf.Print(ensemble_distribution, [ensemble_distribution], 'DIST ', summarize=48)
       ensemble_shape = ensemble_distribution.get_shape().as_list()
-      ensemble_shape_4d = [ensemble_shape[0],1,ensemble_shape[1],1]
+      ensemble_shape_4d = [ensemble_shape[0], 1, ensemble_shape[1], 1]
       #print('>>>>>', ensemble_shape_4d)
       ensemble_distribution_reshape = tf.reshape(ensemble_distribution, ensemble_shape_4d)
-      p_summary_op = tf.summary.image(self.ensemble_distribution, ensemble_distribution_reshape, max_outputs=max_outputs)
+      p_summary_op = tf.summary.image(self.ensemble_distribution, ensemble_distribution_reshape,
+                                      max_outputs=max_outputs)
       summaries.append(p_summary_op)
 
-    if len(summaries) == 0:
+    if not summaries:
       return None
+
     return summaries
