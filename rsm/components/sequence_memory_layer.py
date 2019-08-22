@@ -401,6 +401,7 @@ class SequenceMemoryLayer(SummaryComponent):
       logging.info('Feedback shape: N/A')
     _, target_shape = self.get_target()
     logging.info('Target shape: %s', str(target_shape))
+    logging.info('Decoding mode: %s', str(self._hparams.decode_mode))
     logging.info('~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~')
 
     with tf.variable_scope(self.name, reuse=tf.AUTO_REUSE):
@@ -1083,10 +1084,8 @@ class SequenceMemoryLayer(SummaryComponent):
     # Build a decoder with untied weights
     # -----------------------------------------------------------------
     if self._hparams.decode_mode == 'conv':
-      logging.info('Using convolutional decoder.')
       decoding_weighted_sum = self._build_conv_decoding(target_shape, hidden_tensor, decode_layer_name)
     elif self._hparams.decode_mode == 'fc':
-      logging.info('Using FC decoder.')
       decoding_weighted_sum = self._build_dense_decoding(target_shape, hidden_tensor, decode_layer_name)
     else:
       raise NotImplementedError('Decoding mode not supported: ' + self._hparams.decode_mode)

@@ -1,9 +1,9 @@
 {
   "experiment-options": {
-    "workflow": "rsm.workflows.moving_mnist_workflow",
+    "workflow": "rsm.workflows.video_workflow",
     "dataset": "rsm.datasets.bouncing_balls_dataset",
     "component": "rsm.components.sequence_memory_stack",
-    "batches": 10,
+    "batches": 1000,
 
     "hparams_override": {
       "num_layers": 1,
@@ -36,6 +36,8 @@
       "feedback_norm": [true],
 
       "decode_mode": ["conv"],
+      "hidden_nonlinearity": "leaky_relu",
+      "decode_nonlinearity": ["tanh"],
 
       "filters_field_width": [6],
       "filters_field_height": [6],
