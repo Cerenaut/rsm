@@ -923,7 +923,8 @@ class SequenceMemoryLayer(SummaryComponent):
     boost_cells_1d = tf.math.exp(freq_target - freq_cell_pl) * self._hparams.boost_factor
     boost_shape_1d = [num_cells]
     boost_values = np.ones(num_cells)
-    boost_v = tf.Variable(initial_value=boost_values, shape=boost_shape_1d, trainable=False, dtype=tf.float32)
+    #boost_v = tf.Variable(initial_value=boost_values, shape=boost_shape_1d, trainable=False, dtype=tf.float32)
+    boost_v = tf.Variable(initial_value=boost_values, trainable=False, dtype=tf.float32)
     boost_a = boost_v.assign(boost_cells_1d)
     self._dual.set_op('boost-assign', boost_a)
     self._dual.set_op('boost', boost_v)
