@@ -160,10 +160,13 @@ class SequenceMemoryLayer(SummaryComponent):
   inhibition_mask = 'inhibition-mask'
   previous_mask = 'previous-mask'
 
-  def update_statistics(self, session):  # pylint: disable=W0613
+  def update_statistics(self, batch_type, session):  # pylint: disable=W0613
     if self.use_freq():
       self._update_freq()
       self._update_lifetime_mask()   # sensitive to minimum frequency
+
+      if self.use_boosting():
+        self._update_boost(batch_type, session)
 
   def _update_freq(self):
     """Updates the cell utilisation frequency from usage."""
@@ -869,8 +872,36 @@ class SequenceMemoryLayer(SummaryComponent):
     refracted_cells_5d = pos_i_encoding_cells_5d * refractory_cells_5d
     return refracted_cells_5d
 
-  def _build_boosting(self, i_encoding_cells_5d):
-    boost_shape = [1, 1, 1, self._hparams.cols, self._hparams.cells_per_col]
+  def _update_boost(self, batch_type, session):
+    """Assign the boost vairable after a frequency update. Only in training mode."""
+    if batch_type != self.training:
+      print('Not updating boost - wrong batch type: ', batch_type)
+      return
+    print('YES updating boost - training batch type: ', batch_type)
+
+    freq_cell = self._dual.get(self.freq_cell)
+    freq_cell_pl = freq_cell.get_pl()  # [cols * cells_per_col] 1d
+    freq_cell_values = freq_cell.get_values()
+
+    feed_dict = {
+      freq_cell_pl: freq_cell_values
+    }
+
+    boost_a = 'boost-assign'
+    fetches = {
+      boost_a: self._dual.get_op(boost_a)
+    }
+
+    # Update the variable
+    fetched = session.run(fetches, feed_dict=feed_dict)
+
+    # Off graph copy of boost values
+    boost_values = fetched[boost_a]
+    boost = 'boost'
+    self._dual.set_values(boost, boost_values)
+    print('New boost: ', boost_values)
+
+  def _build_update_boost(self):
     freq_cell_pl = self._dual.get_pl(self.freq_cell)  # [cols * cells_per_col] 1d
     num_cells = self._hparams.cols * self._hparams.cells_per_col
     freq_target = self._hparams.sparsity / num_cells  # k/n where n is num cells
@@ -880,10 +911,38 @@ class SequenceMemoryLayer(SummaryComponent):
     # Say freq = 0
     # exp(0.052-0) = 1.053375743
     boost_cells_1d = tf.math.exp(freq_target - freq_cell_pl) * self._hparams.boost_factor
-    self._dual.set_op('boost', boost_cells_1d)
-    boost_cells_5d = tf.reshape(boost_cells_1d, boost_shape)
+    boost_shape_1d = [num_cells]
+    boost_values = np.ones(num_cells)
+    boost_v = tf.Variable(initial_value=boost_values, shape=boost_shape_1d, trainable=False, dtype=tf.float32)
+    boost_a = boost_v.assign(boost_cells_1d)
+    self._dual.set_op('boost-assign', boost_a)
+    self._dual.set_op('boost', boost_v)
+
+  def _build_boosting(self, i_encoding_cells_5d):
+    self._build_update_boost()
+    boost = 'boost'
+    boost_cells_1d = self._dual.get_op(boost)  # Retrieve the variable
+    boost_shape_5d = [1, 1, 1, self._hparams.cols, self._hparams.cells_per_col]
+    boost_cells_5d = tf.reshape(boost_cells_1d, boost_shape_5d)
     boosted_cell_5d = i_encoding_cells_5d * boost_cells_5d
     return boosted_cell_5d
+
+  # The code below didn't allow the boost to be stored as a Variable for later reloading
+  # def _build_boosting(self, i_encoding_cells_5d):
+  #   boost_shape = [1, 1, 1, self._hparams.cols, self._hparams.cells_per_col]
+  #   freq_cell_pl = self._dual.get_pl(self.freq_cell)  # [cols * cells_per_col] 1d
+  #   num_cells = self._hparams.cols * self._hparams.cells_per_col
+  #   freq_target = self._hparams.sparsity / num_cells  # k/n where n is num cells
+  #   # e.g. cols=600 cell/col=3 num_cells=1800
+  #   # sparsity = k = 95
+  #   # 95/1800 = 0.052777778  ie 5%
+  #   # Say freq = 0
+  #   # exp(0.052-0) = 1.053375743
+  #   boost_cells_1d = tf.math.exp(freq_target - freq_cell_pl) * self._hparams.boost_factor
+  #   self._dual.set_op('boost', boost_cells_1d)
+  #   boost_cells_5d = tf.reshape(boost_cells_1d, boost_shape)
+  #   boosted_cell_5d = i_encoding_cells_5d * boost_cells_5d
+  #   return boosted_cell_5d
 
   def use_boosting(self):
     if self._hparams.boost_factor > 0.0:
@@ -1321,7 +1380,7 @@ class SequenceMemoryLayer(SummaryComponent):
       summaries.append(lifetime_mask_summary)
 
       if self.use_boosting():
-        boost_cell = self._dual.get_op('boost')
+        boost_cell = self._dual.get_op('boost')  # Now a variable
         summaries.append(tf.summary.histogram('boost_cell_hist', boost_cell))
 
 

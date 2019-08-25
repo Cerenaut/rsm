@@ -380,7 +380,7 @@ class LanguageWorkflow(Workflow):
 
     # Output as feedback for next step
     self._component.update_recurrent_and_feedback()
-    self._component.update_statistics(self._session) # only when training
+    self._component.update_statistics(batch_type, self._session) # only when training
 
     return feed_dict
 

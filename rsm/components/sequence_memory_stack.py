@@ -145,12 +145,12 @@ class SequenceMemoryStack(SummaryComponent):
         summarize_distributions=False
     )
 
-  def update_statistics(self, session):  # pylint: disable=W0613
+  def update_statistics(self, batch_type, session):  # pylint: disable=W0613
     """Called after a batch"""
     layers = self.get_num_layers()
     for i in range(layers):
       layer = self.get_layer(i)
-      layer.update_statistics(session)
+      layer.update_statistics(batch_type, session)
 
   def forget_history(self, session, history_forgetting_probability, clear_previous=False):
     """Called before a batch. Stochastically forget the recurrent history."""
