@@ -5,7 +5,7 @@
     "component": "rsm.components.composite_rsm_stack",
     "batches": 5000,
 
-    "checkpoint": "/home/incubator/agief-remote-run/rsm/run/summaries_20190820-170821/model.ckpt-50000",
+    "checkpoint": "/home/incubator/agief-remote-run/rsm/run/summaries_20190822-152543/model.ckpt-50000",
     "checkpoint_load_scope": "composite-rsm-stack/rsm_stack",
     "checkpoint_frozen_scope": "composite-rsm-stack/rsm_stack",
 
@@ -14,6 +14,8 @@
       "build_ae": false,
       "build_rsm": true,
       "build_gan": true,
+
+      "gan_rsm_input": "decoding",
 
       "ae_stack_batch_size": 256,
       "ae_stack_num_layers": 1,
@@ -41,6 +43,7 @@
       "rsm_stack_predictor_optimize": "reconstruction",
       "rsm_stack_hidden_nonlinearity": "leaky_relu",
       "rsm_stack_decode_nonlinearity": ["tanh"],
+      "rsm_stack_decode_mode": ["conv"],
       "rsm_stack_sparsity": [5],
       "rsm_stack_cols": [32],
       "rsm_stack_cells_per_col": [8],
@@ -53,19 +56,19 @@
       "rsm_stack_feedback_norm": [true],
       "rsm_stack_filters_field_width": [6],
       "rsm_stack_filters_field_height": [6],
-      "rsm_stack_filters_field_stride": [3],
+      "rsm_stack_filters_field_stride": [2],
       "rsm_stack_lifetime_sparsity_cols": false,
       "rsm_stack_lifetime_sparsity_dends": false,
 
       "gan_batch_size": 256,
-      "gan_generator_num_layers": 1,
-      "gan_generator_filters": [128],
-      "gan_generator_filters_field_width": [12],
-      "gan_generator_filters_field_height": [12],
-      "gan_generator_filters_field_stride": [12],
-      "gan_generator_nonlinearity": ["leaky_relu"],
-      "gan_generator_loss_mse_lambda": 0.5,
-      "gan_generator_loss_adv_lambda": 1.0,
+      "gan_generator_num_layers": 2,
+      "gan_generator_filters": [32, 64],
+      "gan_generator_filters_field_width": [5, 5],
+      "gan_generator_filters_field_height": [5, 5],
+      "gan_generator_filters_field_stride": [1, 2],
+      "gan_generator_nonlinearity": ["leaky_relu", "leaky_relu"],
+      "gan_generator_loss_mse_lambda": 1.0,
+      "gan_generator_loss_adv_lambda": 0.5,
       "gan_generator_learning_rate": 0.0005,
       "gan_generator_output_nonlinearity": "tanh",
       "gan_discriminator_num_layers": 1,
@@ -76,7 +79,7 @@
       "gan_discriminator_nonlinearity": ["leaky_relu"],
       "gan_discriminator_learning_rate": 0.0005,
       "gan_discriminator_output_nonlinearity": "sigmoid",
-      "gan_discriminator_input_noise": false
+      "gan_discriminator_input_noise": true
     }
   },
   "export-options": {
