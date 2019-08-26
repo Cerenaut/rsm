@@ -884,9 +884,9 @@ class SequenceMemoryLayer(SummaryComponent):
   def _update_boost(self, batch_type, session):
     """Assign the boost variable after a frequency update. Only in training mode."""
     if batch_type != self.training:
-      print('Not updating boost - wrong batch type: ', batch_type)
+      #print('Not updating boost - wrong batch type: ', batch_type)
       return
-    print('YES updating boost - training batch type: ', batch_type)
+    #print('YES updating boost - training batch type: ', batch_type)
 
     freq_cell = self._dual.get(self.freq_cell)
     freq_cell_pl = freq_cell.get_pl()  # [cols * cells_per_col] 1d
@@ -908,7 +908,7 @@ class SequenceMemoryLayer(SummaryComponent):
     boost_values = fetched[boost_a]
     boost = 'boost'
     self._dual.set_values(boost, boost_values)
-    print('New boost: ', boost_values)
+    #print('New boost: ', boost_values)
 
   def _build_update_boost(self):
     """Builds the boost Variable an an assign op to be used periodically""" 
