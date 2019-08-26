@@ -5,7 +5,7 @@
     "component": "rsm.components.composite_rsm_stack",
     "batches": 5000,
 
-    "checkpoint": "./ckpts/summaries_20190821-114642/model.ckpt-5000",
+    "checkpoint": "../ckpts/summaries_20190821-114642/model.ckpt-5000",
 
     "hparams_override": {
       "batch_size": 1,

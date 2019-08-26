@@ -1034,7 +1034,7 @@ class SequenceMemoryLayer(SummaryComponent):
         inputs=hidden_reshape, units=target_area,
         activation=None, use_bias=self._hparams.decode_bias, name=name)
 
-    with tf.variable_scope(decode_layer_name, reuse=True):
+    with tf.variable_scope(name, reuse=True):
       self._weights_d = tf.get_variable('kernel')
 
       if self._hparams.decode_bias:
