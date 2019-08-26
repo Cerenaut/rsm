@@ -231,7 +231,7 @@ class VideoWorkflow(ImageSequenceWorkflow):
 
     # Output as feedback for next step
     self._component.update_recurrent_and_feedback()
-    self._component.update_statistics(self._session)
+    self._component.update_statistics(batch_type, self._session)
 
     # Resets the history at end of a sequence
     self._compute_end_state_mask(self._end_states_vals)

@@ -203,8 +203,8 @@ class CompositeRSMStack(CompositeComponent):
   def update_recurrent_and_feedback(self):
     return self.get_sub_component(self.rsm_name).update_recurrent_and_feedback()
 
-  def update_statistics(self, session):
-    return self.get_sub_component(self.rsm_name).update_statistics(session)
+  def update_statistics(self, batch_type, session):
+    return self.get_sub_component(self.rsm_name).update_statistics(batch_type, session)
 
   def update_history(self, session, history_mask):
     return self.get_sub_component(self.rsm_name).update_history(session, history_mask)
