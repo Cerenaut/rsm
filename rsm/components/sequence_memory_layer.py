@@ -174,7 +174,7 @@ class SequenceMemoryLayer(SummaryComponent):
     if ((self._freq_update_count % self._hparams.freq_update_interval) == 0) and (self._freq_update_count > 0):
       self._freq_update_count = 0
 
-      logging.info('Updating freq...')
+      logging.debug('Updating freq...')
       self._update_freq_with_usage(self.usage_cell, self.freq_cell)
       self._update_freq_with_usage(self.usage_col, self.freq_col)
 
