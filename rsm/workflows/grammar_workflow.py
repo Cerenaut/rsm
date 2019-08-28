@@ -234,6 +234,6 @@ class GrammarWorkflow(ImageSequenceWorkflow):
 
     # Output as feedback for next step
     self._component.update_recurrent_and_feedback()
-    self._component.update_statistics(self._session)
+    self._component.update_statistics(batch_type, self._session)
 
     return feed_dict

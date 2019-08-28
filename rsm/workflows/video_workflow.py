@@ -25,6 +25,7 @@ import logging
 import numpy as np
 import tensorflow as tf
 import matplotlib.pyplot as plt
+import matplotlib.gridspec as gridspec
 import matplotlib.animation as animation
 
 from rsm.workflows.image_sequence_workflow import ImageSequenceWorkflow
@@ -42,7 +43,6 @@ class VideoWorkflow(ImageSequenceWorkflow):
 
     self._output_frames = []
     self._groundtruth_frames = []
-    self._num_repeats = 1
 
     super().__init__(session, dataset_type, dataset_location, component_type, hparams_override, eval_opts, export_opts,
                      opts, summarize, seed, summary_dir, checkpoint_opts)
@@ -75,14 +75,12 @@ class VideoWorkflow(ImageSequenceWorkflow):
       train_dataset = self._dataset.get_train(options=self._opts)
       train_dataset = train_dataset.batch(self._hparams.batch_size, drop_remainder=True)
 
-      train_dataset = train_dataset.flat_map(lambda x, y, z: tf.data.Dataset.from_tensors((x, y, z)).repeat(self._num_repeats))
       train_dataset = train_dataset.prefetch(1)
       train_dataset = train_dataset.repeat()  # repeats indefinitely
 
       # Dataset for testing
       test_dataset = self._dataset.get_test(options=self._opts)
       test_dataset = test_dataset.batch(self._hparams.batch_size, drop_remainder=True)
-      test_dataset = test_dataset.flat_map(lambda x, y, z: tf.data.Dataset.from_tensors((x, y, z)).repeat(self._num_repeats))
       test_dataset = test_dataset.prefetch(1)
       test_dataset = test_dataset.repeat()  # repeats indefinitely
 
@@ -104,7 +102,7 @@ class VideoWorkflow(ImageSequenceWorkflow):
           self._dataset_iterators['testing'] = test_dataset.make_initializable_iterator()
 
   def _init_iterators(self):
-    self._inputs, self._labels, self._states = self._iterator.get_next()
+    self._inputs, self._labels, self._states, self._end_states = self._iterator.get_next()
     self._sequence_length = self._dataset.num_frames
 
   def _setup_component(self):
@@ -177,6 +175,7 @@ class VideoWorkflow(ImageSequenceWorkflow):
 
         # Replace groundtruth with output decoding for the next step
         previous[b] = decoding[b]
+        # previous[b] = np.zeros_like(decoding[b])
         self.set_previous_frame(previous)
 
   def set_previous_frame(self, previous):
@@ -196,7 +195,7 @@ class VideoWorkflow(ImageSequenceWorkflow):
     }
 
     self._component.update_feed_dict(feed_dict, batch_type)
-    fetches = {'inputs': self._inputs, 'states': self._states}
+    fetches = {'inputs': self._inputs, 'states': self._states, 'end_states': self._end_states}
     self._component.add_fetches(fetches, batch_type)
 
     if self.do_profile():
@@ -206,8 +205,17 @@ class VideoWorkflow(ImageSequenceWorkflow):
     self._component.set_fetches(fetched, batch_type)
     self._component.write_summaries(global_step, self._writer, batch_type=batch_type)
 
-    inputs = fetched['inputs']
-    states = fetched['states']
+    self._inputs_vals = fetched['inputs']
+    self._states_vals = fetched['states']
+    self._end_states_vals = fetched['end_states']
+
+    self._do_batch_after_hook(global_step, batch_type, fetched, feed_dict, data_subset)
+
+    return feed_dict
+
+  def _do_batch_after_hook(self, global_step, batch_type, fetched, feed_dict, data_subset):
+    """Things to do after a batch is completed."""
+    del global_step, feed_dict, fetched
 
     # Test-time conditions
     if batch_type == 'encoding' and data_subset == 'test':
@@ -215,25 +223,18 @@ class VideoWorkflow(ImageSequenceWorkflow):
 
       # Prime the model using the first N frames of a sequence
       if self._opts['prime']:
-        self._compute_prime_end(states)
+        self._compute_prime_end(self._states_vals)
 
       # Collect samples for video export
       self._output_frames.append(decoding)
-      self._groundtruth_frames.append(inputs)
-
-    self._do_batch_after_hook(global_step, batch_type, fetched, feed_dict)
-
-    return feed_dict
-
-  def _do_batch_after_hook(self, global_step, batch_type, fetched, feed_dict):
-    del global_step, batch_type, feed_dict
+      self._groundtruth_frames.append(self._inputs_vals)
 
     # Output as feedback for next step
     self._component.update_recurrent_and_feedback()
-    self._component.update_statistics(self._session)
+    self._component.update_statistics(batch_type, self._session)
 
     # Resets the history at end of a sequence
-    self._compute_end_state_mask(fetched['states'])
+    self._compute_end_state_mask(self._end_states_vals)
 
   def frames_to_video(self, input_frames, filename=None):
     """Convert given frames to video format, and export it to disk."""
@@ -250,10 +251,9 @@ class VideoWorkflow(ImageSequenceWorkflow):
     sequence_chunks = list(chunks(input_frames, self._sequence_length))
 
     for i, sequence in enumerate(sequence_chunks):
-      fig = plt.figure()
-
       output_frames = []
-      sequence_filename = filename + '.' + str(i) + '.mp4'
+      sequence_filename = filename + '.' + str(i)
+      filepath = os.path.join(self._summary_dir, sequence_filename)
 
       for sample in sequence:
         cmap = None
@@ -263,12 +263,30 @@ class VideoWorkflow(ImageSequenceWorkflow):
           frame = frame.reshape(frame.shape[0], frame.shape[1])
           cmap = 'gray'
 
-        output_frames.append([plt.imshow(frame, cmap=cmap, animated=True)])
+        output_frames.append((frame, cmap))
 
-      ani = animation.ArtistAnimation(fig, output_frames, interval=50, blit=True,
+      # Export video
+      fig1 = plt.figure(1)
+      video_frames = []
+      for (frame, cmap) in output_frames:
+        video_frames.append([plt.imshow(frame, cmap=cmap, animated=True)])
+      ani = animation.ArtistAnimation(fig1, video_frames, interval=50, blit=True,
                                       repeat_delay=1000)
-      filepath = os.path.join(self._summary_dir, sequence_filename)
-      ani.save(filepath)
+      ani.save(filepath + '.mp4')
+
+      # Export frame by frame image
+      num_frames = len(output_frames)
+      fig2 = plt.figure(figsize=(num_frames, 2))
+      gs1 = gridspec.GridSpec(1, num_frames)
+      gs1.update(wspace=0.025, hspace=0.05) # set the spacing between axes.
+      plt.tight_layout()
+
+      for j, (frame, cmap) in enumerate(output_frames):
+        ax = plt.subplot(gs1[j])
+        ax.axis('off')
+        ax.set_aspect('equal')
+        ax.imshow(frame, cmap=cmap)
+      fig2.savefig(filepath + '.png', bbox_inches='tight')
 
   def run(self, num_batches, evaluate, train=True):
     super(ImageSequenceWorkflow, self).run(num_batches, evaluate, train)  # pylint: disable=bad-super-call

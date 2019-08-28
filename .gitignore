@@ -109,6 +109,7 @@ MNIST-data/
 
 # Generated outputs
 run/
+ckpts/
 agent-runs/
 mlruns/
 *filters*.png

@@ -1,0 +1,95 @@
+{
+  "experiment-options": {
+    "workflow": "rsm.workflows.composite_gan_video_workflow",
+    "dataset": "rsm.datasets.bouncing_balls_dataset",
+    "component": "rsm.components.composite_rsm_stack",
+    "batches": 5000,
+
+    "checkpoint": "/home/incubator/agief-remote-run/rsm/run/summaries_20190822-152543/model.ckpt-50000",
+    "checkpoint_load_scope": "composite-rsm-stack/rsm_stack",
+    "checkpoint_frozen_scope": "composite-rsm-stack/rsm_stack",
+
+    "hparams_override": {
+      "batch_size": 256,
+      "build_ae": false,
+      "build_rsm": true,
+      "build_gan": true,
+
+      "gan_rsm_input": "decoding",
+
+      "ae_stack_batch_size": 256,
+      "ae_stack_num_layers": 1,
+      "ae_stack_summarize_decoding": [true, true],
+      "ae_stack_encoder_nonlinearity": ["none"],
+      "ae_stack_decoder_nonlinearity": ["none"],
+      "ae_stack_filters": [32],
+      "ae_stack_filters_field_width": [6],
+      "ae_stack_filters_field_height": [6],
+      "ae_stack_filters_field_stride": [3],
+      "ae_stack_inhibition_decay": [0.0],
+      "ae_stack_sparsity": [5],
+      "ae_stack_sparsity_output_factor": [1.5],
+      "ae_stack_use_lifetime_sparsity": [true, true],
+
+      "rsm_stack_batch_size": 256,
+      "rsm_stack_loss_type": "mse",
+      "rsm_stack_memory_training_interval": [0, -1],
+      "rsm_stack_memory_summarize_input": true,
+      "rsm_stack_memory_summarize_encoding": false,
+      "rsm_stack_memory_summarize_decoding": true,
+      "rsm_stack_memory_summarize_weights": false,
+      "rsm_stack_memory_summarize_freq": false,
+      "rsm_stack_layer_mass": 0.0,
+      "rsm_stack_predictor_optimize": "reconstruction",
+      "rsm_stack_hidden_nonlinearity": "leaky_relu",
+      "rsm_stack_decode_nonlinearity": ["tanh"],
+      "rsm_stack_decode_mode": ["conv"],
+      "rsm_stack_sparsity": [5],
+      "rsm_stack_cols": [32],
+      "rsm_stack_cells_per_col": [8],
+      "rsm_stack_freq_min": 0.01,
+      "rsm_stack_freq_update_interval": -1,
+      "rsm_stack_freq_learning_rate": 0.1,
+      "rsm_stack_inhibition_decay": [0.8],
+      "rsm_stack_feedback_decay_rate": [0.5],
+      "rsm_stack_feedback_keep_rate": [1.0],
+      "rsm_stack_feedback_norm": [true],
+      "rsm_stack_filters_field_width": [6],
+      "rsm_stack_filters_field_height": [6],
+      "rsm_stack_filters_field_stride": [2],
+      "rsm_stack_lifetime_sparsity_cols": false,
+      "rsm_stack_lifetime_sparsity_dends": false,
+
+      "gan_batch_size": 256,
+      "gan_generator_num_layers": 2,
+      "gan_generator_filters": [32, 64],
+      "gan_generator_filters_field_width": [5, 5],
+      "gan_generator_filters_field_height": [5, 5],
+      "gan_generator_filters_field_stride": [1, 2],
+      "gan_generator_nonlinearity": ["leaky_relu", "leaky_relu"],
+      "gan_generator_loss_mse_lambda": 1.0,
+      "gan_generator_loss_adv_lambda": 0.5,
+      "gan_generator_learning_rate": 0.0005,
+      "gan_generator_output_nonlinearity": "tanh",
+      "gan_discriminator_num_layers": 1,
+      "gan_discriminator_filters": [128],
+      "gan_discriminator_filters_field_width": [34],
+      "gan_discriminator_filters_field_height": [34],
+      "gan_discriminator_filters_field_stride": [34],
+      "gan_discriminator_nonlinearity": ["leaky_relu"],
+      "gan_discriminator_learning_rate": 0.0005,
+      "gan_discriminator_output_nonlinearity": "sigmoid",
+      "gan_discriminator_input_noise": true
+    }
+  },
+  "export-options": {
+    "interval_batches": 1000
+  },
+  "workflow-options": {
+    "evaluate": false,
+    "pretrain_steps": 0,
+
+    "frame_padding_size": 2,
+    "frame_padding_value": 0
+  }
+}
