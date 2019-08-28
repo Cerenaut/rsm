@@ -44,11 +44,13 @@ class LanguageWorkflow(Workflow):
     hparams = Workflow.default_opts()
 
     # Training features
-    hparams.add_hparam('random_offsets', True)
-    hparams.add_hparam('max_sequence_length', 0)
+    #hparams.add_hparam('random_offsets', True)
+    hparams.add_hparam('train_max_sequence_length', 0)
+    hparams.add_hparam('test_max_sequence_length', 0)
     hparams.add_hparam('stochastic_forgetting_probability', 0.0)
 
     # Testing & measurement
+    hparams.add_hparam('num_validating_batches', 1)
     hparams.add_hparam('num_testing_batches', 1)
     hparams.add_hparam('average_accuracy_interval', 100)
     hparams.add_hparam('perplexity_interval', 100)
@@ -76,8 +78,9 @@ class LanguageWorkflow(Workflow):
       self._freq_cells_training = None
       self._freq_cells_testing = None
 
-      random_offsets = self._opts['random_offsets']
-      max_sequence_length = self._opts['max_sequence_length']
+      #random_offsets = self._opts['random_offsets']
+      train_max_sequence_length = self._opts['train_max_sequence_length']
+      test_max_sequence_length = self._opts['test_max_sequence_length']
 
       corpus_train_file = self._opts['corpus_train']
       corpus_test_file = self._opts['corpus_test']
@@ -87,7 +90,8 @@ class LanguageWorkflow(Workflow):
       token_delimiter =  self._opts['token_delimiter']
 
       self._dataset = self._dataset_type(self._dataset_location)
-      self._dataset.setup(int(self._hparams.batch_size), random_offsets, max_sequence_length, 
+      self._dataset.setup(int(self._hparams.batch_size),
+                          train_max_sequence_length, test_max_sequence_length,
                           corpus_train_file, corpus_test_file,
                           token_file, embedding_file, token_delimiter)
 
@@ -159,7 +163,7 @@ class LanguageWorkflow(Workflow):
     loss = self._component.get_values(SequenceMemoryStack.ensemble_loss_sum)
     return loss
 
-  def testing(self, dataset_handle, global_step):
+  def encoding_step(self, phase, global_step, dataset_handle, phase_change=False):
     """The testing procedure within the batch loop"""
 
     # Optionally load a distribution predicted by another external method (in this case, Kneser-Ney)
@@ -178,11 +182,15 @@ class LanguageWorkflow(Workflow):
     batch_type = 'encoding'
     data_subset = 'test'
     stochastic_forgetting_probability = 0.0  # Don't forget at test time
-    self._do_batch(dataset_handle, batch_type, data_subset, global_step, stochastic_forgetting_probability)
 
-  def training(self, dataset_handle, global_step):  # pylint: disable=arguments-differ
+    self.step(phase, dataset_handle, batch_type, data_subset, global_step, stochastic_forgetting_probability, phase_change)
+
+  def training_step(self, dataset_handle, global_step, phase_change=False):  # pylint: disable=arguments-differ
     """The training procedure within the batch loop"""
 
+    # Called by base Workflow run()
+    # A single training step
+    phase = 'training'
     batch_type = 'training'
     data_subset = 'train'
     stochastic_forgetting_probability = self._opts['stochastic_forgetting_probability']
@@ -191,23 +199,91 @@ class LanguageWorkflow(Workflow):
       batch_type = 'encoding'
       data_subset = 'test'
 
-    self._do_batch(dataset_handle, batch_type, data_subset, global_step, stochastic_forgetting_probability)
+    self.step(phase, dataset_handle, batch_type, data_subset, global_step, stochastic_forgetting_probability, phase_change)
 
-  def _do_batch(self, dataset_handle, batch_type, data_subset, global_step, stochastic_forgetting_probability):
+  def step(self, phase, dataset_handle, batch_type, data_subset, global_step, stochastic_forgetting_probability, phase_change):
     """Execute a single batch"""
 
     # Option to clear history randomly, to (hopefully) create a more generalizable representation
     # No effect if P=0
+    if phase_change is True:
+      logging.info('Phase change! Forgetting...')
+      stochastic_forgetting_probability = 1.0
     self._component.forget_history(self._session, stochastic_forgetting_probability)
 
     # Option to let dataset decide when to clear
     # History update with per-batch-sample flag for whether to clear
-    max_sequence_length = self._opts['max_sequence_length']
-    if max_sequence_length > 0:
-      subset = self._dataset.get_subset(data_subset)
-      history_mask = subset['mask']
-      self._component.update_history(self._session, history_mask)
+    #max_sequence_length = self._opts['max_sequence_length']
+    #if max_sequence_length > 0:
+    subset = self._dataset.get_subset(data_subset)
+    history_mask = subset['mask']
+    self._component.update_history(self._session, history_mask)
 
+    self._priming(phase)
+
+    # Provide new data
+    feed_dict = {
+        self._placeholders['dataset_handle']: dataset_handle
+    }
+
+    # Graph update
+    self._component.update_feed_dict(feed_dict, batch_type)
+    fetches = {'labels': self._labels}
+    # Warning: double advance of the dataset on changing subset..? After here
+    self._component.add_fetches(fetches, batch_type)
+    fetched = self._session.run(fetches, feed_dict=feed_dict)
+    self._component.set_fetches(fetched, batch_type)
+    # Warning: double advance of the dataset on changing subset..? Before here
+    self._component.write_summaries(global_step, self._writer, batch_type=batch_type)
+
+    labels = fetched['labels']
+
+    # Calculate stats about predictions
+    if self._hparams.predictor_optimize == 'accuracy':
+      predicted_labels = self._component.get_values(SequenceMemoryStack.ensemble_top_1)  #get_predicted_labels()
+
+      # Accuracy
+      accuracy = np_accuracy(predicted_labels, labels)
+
+      if phase_change is True:  # Reset on phase change
+        self._moving_average.clear()
+
+      self._moving_average.update('accuracy', accuracy, self._writer, phase, batch=global_step,
+                                  prefix=self._component.name)
+
+      # Perplexity
+      perplexity_interval = self._opts['perplexity_interval']
+      if perplexity_interval >= 0:  # set to -1 to disable, cos it's expensive
+        if phase_change is True:  # Reset on phase change
+          self._loss_sum = 0.0
+          self._loss_samples = 0
+
+        # Calculate cumulative loss and accurate perplexity
+        prediction_loss = self._component.get_values(SequenceMemoryStack.ensemble_loss_sum)
+        self._loss_sum += prediction_loss
+        self._loss_samples += self._hparams.batch_size
+        self._loss_mean = self._loss_sum / self._loss_samples
+        self._perplexity = math.exp(self._loss_mean)
+
+        if perplexity_interval > 0:
+          samples_batches = int(self._loss_samples / self._hparams.batch_size)
+          if samples_batches == perplexity_interval:
+            logging.info('Perplexity %f Loss mean %f  Samples %f', self._perplexity, self._loss_mean, self._loss_samples)
+            self._write_perplexity_summary(phase, global_step, self._perplexity)
+            self._loss_sum = 0.0
+            self._loss_samples = 0
+        else:
+          self._write_perplexity_summary(phase, global_step, self._perplexity)
+
+    self._debug(phase, global_step)
+
+    # Output as feedback for next step
+    self._component.update_recurrent_and_feedback()
+    self._component.update_statistics(batch_type, self._session) # only when training
+
+    return feed_dict
+
+  def _priming(self, phase):
     # Optionally load a primer text, then self-generate the rest of the test corpus
     # i.e. generative mode.
     primer = self._opts['test_primer']
@@ -238,51 +314,7 @@ class LanguageWorkflow(Workflow):
       previous_values = np.expand_dims(embedding_values_reshape, 0)  # Insert batch dimension
       self._component.get_layer(0).get_dual().set_values('previous', previous_values)
 
-    # Provide new data
-    feed_dict = {
-        self._placeholders['dataset_handle']: dataset_handle
-    }
-
-    self._component.update_feed_dict(feed_dict, batch_type)
-    fetches = {'labels': self._labels}
-    # Warning: double advance of the dataset on changing subset..? After here
-    self._component.add_fetches(fetches, batch_type)
-    fetched = self._session.run(fetches, feed_dict=feed_dict)
-    self._component.set_fetches(fetched, batch_type)
-    # Warning: double advance of the dataset on changing subset..? Before here
-    self._component.write_summaries(global_step, self._writer, batch_type=batch_type)
-
-    labels = fetched['labels']
-
-    # Calculate stats about predictions
-    if self._hparams.predictor_optimize == 'accuracy':
-      predicted_labels = self._component.get_values(SequenceMemoryStack.ensemble_top_1)  #get_predicted_labels()
-
-      # Accuracy
-      accuracy = np_accuracy(predicted_labels, labels)
-      self._moving_average.update('accuracy', accuracy, self._writer, batch_type, batch=global_step,
-                                  prefix=self._component.name)
-
-      perplexity_interval = self._opts['perplexity_interval']
-      if perplexity_interval >= 0:
-
-        # Calculate cumulative loss and accurate perplexity
-        prediction_loss = self._component.get_values(SequenceMemoryStack.ensemble_loss_sum)
-        self._loss_sum += prediction_loss
-        self._loss_samples += self._hparams.batch_size
-        self._loss_mean = self._loss_sum / self._loss_samples
-        self._perplexity = math.exp(self._loss_mean)
-
-        if perplexity_interval > 0:
-          samples_batches = int(self._loss_samples / self._hparams.batch_size)
-          if samples_batches == perplexity_interval:
-            logging.info('Perplexity %f Loss mean %f  Samples %f', self._perplexity, self._loss_mean, self._loss_samples)
-            self._write_perplexity_summary(batch_type, global_step, self._perplexity)
-            self._loss_sum = 0.0
-            self._loss_samples = 0
-        else:
-          self._write_perplexity_summary(batch_type, global_step, self._perplexity)
-
+  def _debug(self, phase, global_step):
     debug_start = self._opts['debug_start']
     if debug_start >= 0 and global_step > debug_start:
       predictions = self._component.get_predicted_distribution()
@@ -378,49 +410,63 @@ class LanguageWorkflow(Workflow):
       fig.tight_layout()
       plt.show()
 
-    # Output as feedback for next step
-    self._component.update_recurrent_and_feedback()
-    self._component.update_statistics(batch_type, self._session) # only when training
-
-    return feed_dict
-
-  def _write_perplexity_summary(self, batch_type, batch, perplexity):
+  def _write_perplexity_summary(self, phase, global_step, perplexity):
     """Create off-graph TensorBoard value summaries, and write events to disk."""
     summary = tf.Summary()
-    summary.value.add(tag=self._component.name + '/summaries/' + batch_type + '/average_perplexity',
+    summary.value.add(tag=self._component.name + '/summaries/' + phase + '/average_perplexity',
                       simple_value=perplexity)
-    self._writer.add_summary(summary, batch)
+    self._writer.add_summary(summary, global_step)
     self._writer.flush()
 
-  def helper_evaluate(self, batch):
+  def helper_validate(self, global_step):
+    phase = 'validate'
+    num_validating_batches = self._opts['num_validating_batches']
+    progress_interval = self._opts['testing_progress_interval']
+    self.encoding(phase, global_step, num_validating_batches, progress_interval)
+
+  def helper_evaluate(self, global_step):
+    phase = 'evaluate'
+    num_testing_batches = self._opts['num_testing_batches']
+    progress_interval = self._opts['testing_progress_interval']
+    self.encoding(phase, global_step, num_testing_batches, progress_interval)
+
+  def encoding(self, phase, global_step, num_batches, progress_interval):
     """Evaluation method."""
 
-    logging.info('Evaluate starting...')
+    logging.info('Encoding phase %s starting (%d batches)', phase, num_batches)
     self._loss_sum = 0.0
     self._loss_samples = 0.0
     self._loss_mean = 0.0
     self._perplexity = 0.0
 
+    # TODO init this handle only once
     testing_handle = self._session.run(self._dataset_iterators['testing'].string_handle())
     self._session.run(self._dataset_iterators['testing'].initializer)
 
     # Apply a fixed number of test batches. Might take time to warm up and dataset repeats.
     # We can pick an interval from the results later
-    num_testing_batches = self._opts['num_testing_batches']
-    for test_batch in range(0, num_testing_batches):
+    #num_testing_batches = self._opts['num_testing_batches']
+    for batch in range(0, num_batches):
 
       # Perform the training, and retrieve feed_dict for evaluation phase
       do_print = True
-      testing_progress_interval = self._opts['testing_progress_interval']
-      if testing_progress_interval > 0:
-        if (test_batch % testing_progress_interval) != 0:
+      #testing_progress_interval = self._opts['testing_progress_interval']
+      if progress_interval > 0:
+        if (batch % progress_interval) != 0:
           do_print = False
 
+      encoding_step = global_step + batch
+
       if do_print:
-        global_step = test_batch
-        logging.info('Test batch %d of %d, global step: %d', global_step, num_testing_batches, batch)
+        logging.info('Phase %s batch %d of %d (global %d)', phase, batch, num_batches, encoding_step)
 
-      self.testing(testing_handle, test_batch)
+      phase_change = False
+      if batch == 0:
+        phase_change = True
 
+      self.encoding_step(phase, encoding_step, testing_handle, phase_change)
+
+    # After the loop:
+    logging.info('Encoding complete.')
     if self._hparams.predictor_optimize == 'accuracy':
       logging.info('Perplexity %f Loss mean %f  Samples %f', self._perplexity, self._loss_mean, self._loss_samples)
