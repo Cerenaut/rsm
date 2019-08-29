@@ -134,9 +134,10 @@ class SequenceMemoryStack(SummaryComponent):
 
         boost_factor=[0.0],  # Enables boost control if nonzero, replaces inhibition
         inhibition_decay=[0.1],  # controls refractory period
+        feedback_norm=[True],  # Whether to norm the feedbacks
         feedback_decay_rate=[0.0],  # Optional integrated/exp decay feedback
         feedback_keep_rate=[1.0],  # Optional dropout on feedback
-        feedback_norm=[True],
+        hidden_keep_rate=[1.0],  # Optional dropout on hidden layer
 
         # Sparse parameters:
         sparsity=[25],
@@ -505,8 +506,9 @@ class SequenceMemoryStack(SummaryComponent):
       layer_hparams.boost_factor = self._hparams.boost_factor[i]
       layer_hparams.inhibition_decay = self._hparams.inhibition_decay[i]
       layer_hparams.feedback_decay_rate = self._hparams.feedback_decay_rate[i]
-      layer_hparams.feedback_keep_rate = self._hparams.feedback_keep_rate[i]
       layer_hparams.feedback_norm = self._hparams.feedback_norm[i]
+      layer_hparams.feedback_keep_rate = self._hparams.feedback_keep_rate[i]
+      layer_hparams.hidden_keep_rate = self._hparams.hidden_keep_rate[i]
 
       layer_hparams.sparsity = self._hparams.sparsity[i]
       layer_hparams.lifetime_sparsity_dends = self._hparams.lifetime_sparsity_dends

@@ -68,8 +68,9 @@ class SequenceMemoryLayer(SummaryComponent):
         predictor_integrate_input=False,  # default: only current cells
 
         # Feedback
-        feedback_decay_rate=0.0,  # Optional integrated/exp decay feedback
+        hidden_keep_rate=1.0,
         feedback_keep_rate=1.0,  # Optional dropout on feedback
+        feedback_decay_rate=0.0,  # Optional integrated/exp decay feedback
         feedback_norm=True,  # Option to normalize feedback
         feedback_norm_eps=0.0000000001,  # Prevents feedback norm /0
 
@@ -136,6 +137,7 @@ class SequenceMemoryLayer(SummaryComponent):
 
   prediction_input = 'prediction-input'
   feedback_keep = 'feedback-keep'
+  hidden_keep = 'hidden-keep'
   lifetime_mask = 'lifetime-mask'
   encoding_mask = 'encoding-mask'
   encoding = 'encoding'
@@ -876,8 +878,16 @@ class SequenceMemoryLayer(SummaryComponent):
     min_i_encoding_cells_5d = tf.reduce_min(i_encoding_cells_5d, axis=[1, 2, 3, 4], keepdims=True) # may be negative
     pos_i_encoding_cells_5d = (i_encoding_cells_5d - min_i_encoding_cells_5d) + 1.0 # shift to +ve range, ensure min value is nonzero
 
+    # Optional hidden dropout
+    if self._hparams.hidden_keep_rate < 1.0:
+      hidden_keep_pl = self._dual.add(self.hidden_keep, shape=(), default_value=1.0).add_pl(default=True)
+      dropout_cells_5d = tf.nn.dropout(refractory_cells_5d, hidden_keep_pl)  # Note, a scaling is applied
+    else:
+      dropout_cells_5d = refractory_cells_5d
+
     # Apply inhibition/refraction
-    refracted_cells_5d = pos_i_encoding_cells_5d * refractory_cells_5d
+    #refracted_cells_5d = pos_i_encoding_cells_5d * refractory_cells_5d
+    refracted_cells_5d = pos_i_encoding_cells_5d * dropout_cells_5d
 
     return refracted_cells_5d
 
@@ -1254,9 +1264,12 @@ class SequenceMemoryLayer(SummaryComponent):
 
     # Adjust feedback keep rate by batch type
     feedback_keep_rate = 1.0  # Encoding
+    hidden_keep_rate = 1.0  # Encoding
     if batch_type == self.training:
       feedback_keep_rate = self._hparams.feedback_keep_rate  # Training
+      hidden_keep_rate = self._hparams.hidden_keep_rate  # Training
     logging.debug('Feedback keep rate: %s', str(feedback_keep_rate))
+    logging.debug('Hidden keep rate: %s', str(hidden_keep_rate))
 
     # Placeholder for feedback keep rate
     if self._hparams.feedback_keep_rate < 1.0:
@@ -1264,6 +1277,13 @@ class SequenceMemoryLayer(SummaryComponent):
       feedback_keep_pl = feedback_keep.get_pl()
       feed_dict.update({
           feedback_keep_pl: feedback_keep_rate
+      })
+
+    if self._hparams.hidden_keep_rate < 1.0:
+      hidden_keep = self._dual.get(self.hidden_keep)
+      hidden_keep_pl = hidden_keep.get_pl()
+      feed_dict.update({
+          hidden_keep_pl: hidden_keep_rate
       })
 
   def add_fetches(self, fetches, batch_type='training'):
