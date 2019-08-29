@@ -66,11 +66,17 @@ class TokenEmbeddingDataset(Dataset):  # pylint: disable=W0223
 
   def get_train(self, preprocess=False, options=None):  # pylint: disable=W0221
     """Returns tf.data.Dataset object """
-    return self._dataset(preprocess, options, self._embedding, 'train', random_offsets=self._random_offsets)
+    init_offsets = 'striped'
+    wrap_offsets = 'random'
+    max_sequence_length = self._train_max_sequence_length
+    return self._dataset(preprocess, options, self._embedding, 'train', init_offsets=init_offsets, wrap_offsets=wrap_offsets, max_sequence_length=max_sequence_length)
 
   def get_test(self, preprocess=False, options=None):  # pylint: disable=W0221
     """Returns tf.data.Dataset object """
-    return self._dataset(preprocess, options, self._embedding, 'test', random_offsets=False)
+    init_offsets = 'striped'
+    wrap_offsets = 'zero'
+    max_sequence_length = self._test_max_sequence_length
+    return self._dataset(preprocess, options, self._embedding, 'test', init_offsets=init_offsets, wrap_offsets=wrap_offsets, max_sequence_length=max_sequence_length)
 
   # def is_test_state(self, subset):
   #   """Check if subset contains test state."""
@@ -106,7 +112,8 @@ class TokenEmbeddingDataset(Dataset):  # pylint: disable=W0223
     #e.check()
     return e
 
-  def setup(self, batch_size, random_offsets, max_sequence_length, 
+  def setup(self, batch_size,
+            train_max_sequence_length, test_max_sequence_length,
             train_text_file, test_text_file, token_file, embedding_file,
             token_delimiter=',', eos='<end>'):
     """Setup the text embedding dataset."""
@@ -119,13 +126,15 @@ class TokenEmbeddingDataset(Dataset):  # pylint: disable=W0223
     logging.info('Token file: %s', token_file)
     logging.info('Token delimiter: %s', token_delimiter)
     logging.info('EOS: %s', eos)
-    logging.info('Max seq. len.: %s', str(max_sequence_length))
-    logging.info('Random offsets: %s', str(random_offsets))
+    logging.info('Training Max seq. len.: %s', str(train_max_sequence_length))
+    logging.info('Testing Max seq. len.: %s', str(test_max_sequence_length))
+    #logging.info('Random offsets: %s', str(random_offsets))
 
     self._eos = eos
     self._batch_size = int(batch_size)
-    self._max_sequence_length = int(max_sequence_length)
-    self._random_offsets = random_offsets
+    self._train_max_sequence_length = int(train_max_sequence_length)
+    self._test_max_sequence_length = int(test_max_sequence_length)
+    #self._random_offsets = random_offsets
 
     # Create the embedding
     self._embedding = self.create_embedding(token_file, embedding_file, token_delimiter)
@@ -167,7 +176,7 @@ class TokenEmbeddingDataset(Dataset):  # pylint: disable=W0223
     embedding_shape = [token_value_shape[0], token_value_shape[1], 1]  # add depth dim
     return embedding_shape
 
-  def _dataset(self, preprocess, options, embedding, subset_key, random_offsets=True):  # pylint: disable=W0613, W0221
+  def _dataset(self, preprocess, options, embedding, subset_key, init_offsets, wrap_offsets, max_sequence_length=None):  # pylint: disable=W0613, W0221
     """Generate a dataset from the provided sentences & embedding."""
     #random_offsets = False
     subset = self.get_subset(subset_key)
@@ -181,9 +190,25 @@ class TokenEmbeddingDataset(Dataset):  # pylint: disable=W0223
     logging.info('Dataset subset %s has %d tokens.', subset_key, num_words)
 
     # Default max seq len is the corpus size; but can be made shorter
-    max_sequence_length = num_words
-    if self._max_sequence_length > 0:
-      max_sequence_length = self._max_sequence_length # Truncate sequences to this length
+    # max_sequence_length = num_words  # Never hits this, because it wraps
+    # if self._max_sequence_length > 0:
+    #   max_sequence_length = self._max_sequence_length # Truncate sequences to this length
+    if max_sequence_length <= 0:
+      max_sequence_length = num_words  # Never hits this, because it wraps
+    # else: is some value.
+
+    # Controls for generating dataset offsets
+    wrap_random_offsets = False
+    init_random_offsets = False
+    init_striped_offsets = False
+
+    if wrap_offsets == 'random':
+      wrap_random_offsets = True
+
+    if init_offsets == 'random':
+      init_random_offsets = True
+    elif init_offsets == 'striped':
+      init_striped_offsets = True
 
     # Initialise the sequence list with N (=batch_size) sequences
     embedding_shape = self.get_embedding_shape()
@@ -204,23 +229,34 @@ class TokenEmbeddingDataset(Dataset):  # pylint: disable=W0223
 
     # init the batch of indices into the corpus
     for b in range(self._batch_size):
-      if random_offsets:
+      i = 0  # default
+      if init_random_offsets:
         i = get_random_index(num_words)
-        sequence_offsets[b] = i
+      elif init_striped_offsets:
+        # Say I have 100 words and batch size 5
+        # Then 100/5 = 20 ie each starts at fixed intervals
+        # What if not divisible by batch size?
+        # e.g. 82430 / 300 = 274
+        # 299 * 274 = 81926 + 274 = 82200 i.e. 82430-82200=230 words would be untested
+        stripe_size = num_words / self._batch_size
+        i = b * stripe_size  # i.e. 0*274, 1*274, 2*274
+      sequence_offsets[b] = i
+
 
     def sequence_generator():
       """Batch sequence generator."""
 
       # Loop indefinitely
       while True:
+        # Generate samples for a batch
         for b in range(self._batch_size):
 
-          i = sequence_offsets[b]
-          z = sequence_lengths[b]
+          i = sequence_offsets[b]  # Index (offset)
+          z = sequence_lengths[b]  # Length
 
           token = tokens[i]  # CURRENT input
 
-          z = z + 1  # Increase length
+          z = z + 1  # Increment length
           i = i +1  # NEXT index.
           mask = 1.0  # keep history
 
@@ -228,14 +264,15 @@ class TokenEmbeddingDataset(Dataset):  # pylint: disable=W0223
           # Or if we've watche a sequence of defined length
           if z >= max_sequence_length:
             #print('max len')
-            z = 0
-            if random_offsets:
+            # Get new offset
+            if wrap_random_offsets:
               #print('random offsets')
               i = get_random_index(num_words)
             else:
               #print('zero offsets')
               i = 0
-            mask = 0.0  # clear history
+            z = 0  # Zero length
+            mask = 0.0  # Clear history
 
           # Wrap @ end of corpus
           if i >= num_words:
@@ -245,7 +282,7 @@ class TokenEmbeddingDataset(Dataset):  # pylint: disable=W0223
             mask = 0.0  # clear history
 
           # Useful debugging info, but very verbose:
-          #logging.info('Dataset subset: %s batch %d mask: %f offset: %s len: %d of %d', subset_key, b, mask, i, z, num_words)
+          #logging.info('NEXT: Dataset subset: %s batch %d mask: %f offset: %s len: %d of %d', subset_key, b, mask, i, z, num_words)
 
           sequence_offsets[b] = i
           sequence_lengths[b] = z
