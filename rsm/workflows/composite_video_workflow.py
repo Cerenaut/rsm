@@ -57,4 +57,6 @@ class CompositeVideoWorkflow(CompositeWorkflow, VideoWorkflow):
 
   def _get_status(self):
     """Return some string proxy for the losses or errors being optimized"""
-    return self._component.get_sub_component('rsm_stack').get_loss()
+    if CompositeRSMStack.rsm_name in self._component.get_sub_components().keys():
+      return self._component.get_sub_component('rsm_stack').get_loss()
+    return 0.0
