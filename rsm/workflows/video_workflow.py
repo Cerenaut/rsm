@@ -61,7 +61,7 @@ class VideoWorkflow(ImageSequenceWorkflow):
         testing_progress_interval=1,
         clear_before_test=True,
         frame_padding_size=0,
-        frame_padding_value=0,
+        frame_padding_value=0.0,
         profile_file=None
     )
 
