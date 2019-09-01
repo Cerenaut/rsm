@@ -62,6 +62,8 @@ class SequenceMemoryLayer(SummaryComponent):
         decode_nonlinearity='none', # Used for decoding
         inhibition_decay=0.1,  # controls refractory period
         boost_factor=0.0,
+        boost_factor_decay=0.0,
+        boost_factor_update_interval=0,  # num training batches between boost factor updates
         decode_mode='fc',
 
         predictor_norm_input=True,
@@ -135,6 +137,7 @@ class SequenceMemoryLayer(SummaryComponent):
   freq_col = 'freq-col'
   freq_cell = 'freq-cell'
 
+  boost_factor = 'boost-factor'
   prediction_input = 'prediction-input'
   feedback_keep = 'feedback-keep'
   hidden_keep = 'hidden-keep'
@@ -170,16 +173,28 @@ class SequenceMemoryLayer(SummaryComponent):
 
       if self.use_boosting():
         self._update_boost(batch_type, session)
+        self._update_boost_factor(batch_type)
+
+  def _update_boost_factor(self, batch_type):
+    # Only update boost batch count for training batches
+    if batch_type == self.training:
+      #print('training batch ', self._boost_batch_count, 'int ', self._hparams.boost_factor_update_interval)
+      if ((self._boost_batch_count % self._hparams.boost_factor_update_interval) == 0) and (self._boost_batch_count > 0):
+        self._boost_batch_count = 0
+        old_boost_factor = self._dual.get_values(self.boost_factor)
+        new_boost_factor = np.copy(old_boost_factor)
+        new_boost_factor = old_boost_factor * self._hparams.boost_factor_decay
+        logging.info('Updating BOOST=======================> %f -> %f', old_boost_factor, new_boost_factor)
+        self._dual.set_values(self.boost_factor, new_boost_factor)
+      self._boost_batch_count += 1
 
   def _update_freq(self):
     """Updates the cell utilisation frequency from usage."""
     if ((self._freq_update_count % self._hparams.freq_update_interval) == 0) and (self._freq_update_count > 0):
       self._freq_update_count = 0
-
       logging.debug('Updating freq...')
       self._update_freq_with_usage(self.usage_cell, self.freq_cell)
       self._update_freq_with_usage(self.usage_col, self.freq_col)
-
     self._freq_update_count += 1
 
   def _update_freq_with_usage(self, usage_key, freq_key):
@@ -371,6 +386,7 @@ class SequenceMemoryLayer(SummaryComponent):
     self._hparams = hparams
     self._freq_update_count = 0
     self._training_batch_count = 0
+    self._boost_batch_count = 0
 
     self._weights_f = None
     self._weights_r = None
@@ -922,6 +938,7 @@ class SequenceMemoryLayer(SummaryComponent):
 
   def _build_update_boost(self):
     """Builds the boost Variable an an assign op to be used periodically""" 
+    boost_factor_pl = self._dual.add(self.boost_factor, shape=(), default_value=self._hparams.boost_factor).add_pl(default=True)
     freq_cell_pl = self._dual.get_pl(self.freq_cell)  # [cols * cells_per_col] 1d
     num_cells = self._hparams.cols * self._hparams.cells_per_col
     freq_target = self._hparams.sparsity / num_cells  # k/n where n is num cells
@@ -930,7 +947,9 @@ class SequenceMemoryLayer(SummaryComponent):
     # 95/1800 = 0.052777778  ie 5%
     # Say freq = 0
     # exp(0.052-0) = 1.053375743
-    boost_cells_1d = tf.math.exp(freq_target - freq_cell_pl) * self._hparams.boost_factor
+    # Numenta code: 
+    #  boost_factors = tf.exp((target_density - duty_cycles) * boost_strength)
+    boost_cells_1d = tf.math.exp((freq_target - freq_cell_pl) * boost_factor_pl)
     boost_shape_1d = [num_cells]
     boost_values = np.ones(num_cells)
     #boost_v = tf.Variable(initial_value=boost_values, shape=boost_shape_1d, trainable=False, dtype=tf.float32)

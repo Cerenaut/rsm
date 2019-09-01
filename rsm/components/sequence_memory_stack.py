@@ -133,6 +133,9 @@ class SequenceMemoryStack(SummaryComponent):
         decode_mode=['fc'],
 
         boost_factor=[0.0],  # Enables boost control if nonzero, replaces inhibition
+        boost_factor_decay=[0.0],
+        boost_factor_update_interval=[0],  # num training batches between boost factor updates
+
         inhibition_decay=[0.1],  # controls refractory period
         feedback_norm=[True],  # Whether to norm the feedbacks
         feedback_decay_rate=[0.0],  # Optional integrated/exp decay feedback
@@ -504,6 +507,9 @@ class SequenceMemoryStack(SummaryComponent):
       layer_hparams.decode_mode = self._hparams.decode_mode[i]
       layer_hparams.decode_nonlinearity = self._hparams.decode_nonlinearity[i]
       layer_hparams.boost_factor = self._hparams.boost_factor[i]
+      layer_hparams.boost_factor_decay = self._hparams.boost_factor_decay[i]
+      layer_hparams.boost_factor_update_interval = self._hparams.boost_factor_update_interval[i]
+
       layer_hparams.inhibition_decay = self._hparams.inhibition_decay[i]
       layer_hparams.feedback_decay_rate = self._hparams.feedback_decay_rate[i]
       layer_hparams.feedback_norm = self._hparams.feedback_norm[i]

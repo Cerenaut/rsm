@@ -6,8 +6,8 @@ import matplotlib.pyplot as plt
 import pandas as pd
 import scipy.cluster.hierarchy as shc
 
-all_tokens_file = 'ptb_dense_10k.tokens.txt'
-all_token_paths_file = 'ptb_dense_10k.token_paths'
+all_tokens_file = 'ptb_dense_10k_cbow.tokens.txt'
+all_token_paths_file = 'ptb_dense_10k_cbow.token_paths'
 corpus = '/home/dave/agi/penn-treebank/simple-examples/data/ptb.train.txt'
 #corpus = '/home/dave/agi/penn-treebank/simple-examples/data/ptb.train-short.txt'
 eos = '<end>'
@@ -28,13 +28,15 @@ base_params = {
   'size':model_size
 }
 
+# model_params = [
+#   {
+#     'filename':'skip.model.bin',
+#     'type':'skipgram'
+#   }
+# ]
 model_params = [
   {
     'filename':'skip.model.bin',
-    'type':'skipgram'
-  },
-  {
-    'filename':'cbow.model.bin',
     'type':'cbow'
   }
 ]
@@ -97,7 +99,9 @@ for m in range(0, num_models):
   else:
     model_type = get_param(base_params, model_params, 'type', m)
     model_size = get_param(base_params, model_params, 'size', m)
+    # Remove minCount
     model = fasttext.train_unsupervised(preprocessed_corpus, model=model_type, minCount=1, dim=model_size)
+    #model = fasttext.train_unsupervised(preprocessed_corpus, model=model_type, dim=model_size)
     model.save_model(model_filename)
 
   num_tokens = len(model.labels)
