@@ -19,6 +19,7 @@ from __future__ import absolute_import
 from __future__ import division
 from __future__ import print_function
 
+import math
 import logging
 
 import tensorflow as tf
@@ -529,8 +530,10 @@ class SequenceMemoryStack(SummaryComponent):
       pool_size = self._hparams.pool_size[i]
       if pool_size > 1:
         logging.info('Pooling %s:1', str(pool_size))
-        layer_input_shape[1] = int(layer_input_shape[1] / pool_size)
-        layer_input_shape[2] = int(layer_input_shape[2] / pool_size)
+        # layer_input_shape[1] = int(layer_input_shape[1] / pool_size)
+        # layer_input_shape[2] = int(layer_input_shape[2] / pool_size)
+        layer_input_shape[1] = math.ceil(float(layer_input_shape[1]) / float(pool_size))
+        layer_input_shape[2] = math.ceil(float(layer_input_shape[2]) / float(pool_size))
 
     # 2nd pass - for bi-directional connectivity
     layer_input_values = input_values
