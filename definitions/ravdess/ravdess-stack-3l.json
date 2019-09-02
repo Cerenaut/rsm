@@ -19,11 +19,10 @@
 
       "ae_stack_encoder_nonlinearity": ["relu", "relu", "relu"],
       "ae_stack_decoder_nonlinearity": ["relu", "relu", "relu"],
-      "ae_stack_filters": [64, 32, 64],
-      "ae_stack_filters_field_width": [6, 6, 4],
-      "ae_stack_filters_field_height": [6, 6, 4],
-      "ae_stack_filters_field_stride": [1, 3, 2],
-
+      "ae_stack_filters": [32, 64, 128],
+      "ae_stack_filters_field_width": [5, 5, 5],
+      "ae_stack_filters_field_height": [5, 5, 5],
+      "ae_stack_filters_field_stride": [1, 2, 2],
       "ae_stack_inhibition_decay": [0.1, 0.1, 0.1],
 
       "ae_stack_sparsity": [5, 5, 5],
@@ -45,7 +44,7 @@
       "rsm_stack_predictor_optimize": "reconstruction",
       "rsm_stack_predictor_nonlinearity": ["leaky-relu", "leaky-relu"],
 
-      "rsm_stack_autoencode": true,
+      "rsm_stack_mode": "encode-input",
 
       "rsm_stack_sparsity": [20],
       "rsm_stack_cols": [600],
