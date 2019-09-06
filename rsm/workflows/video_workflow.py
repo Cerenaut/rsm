@@ -143,8 +143,9 @@ class VideoWorkflow(ImageSequenceWorkflow):
 
     self._component.update_history(self._session, history_mask)
 
-  def training(self, dataset_handle, global_step):  # pylint: disable=arguments-differ
+  def training_step(self, dataset_handle, global_step, phase_change=None):  # pylint: disable=arguments-differ
     """The training procedure within the batch loop"""
+    del phase_change
 
     if self._freeze_training:
       batch_type = 'encoding'

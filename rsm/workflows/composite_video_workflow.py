@@ -36,6 +36,7 @@ class CompositeVideoWorkflow(CompositeWorkflow, VideoWorkflow):
         # Skip the first layer; we already have its reconstruction
         if i == 0:
           continue
+
         self._decoder(global_step, name, CompositeRSMStack.ae_name, sub_component.get_encoding(), feed_dict)
 
     if CompositeRSMStack.rsm_name in self._component.get_sub_components().keys():
