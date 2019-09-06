@@ -3,12 +3,13 @@
     "workflow": "rsm.workflows.composite_video_workflow",
     "dataset": "rsm.datasets.ravdess_dataset",
     "component": "rsm.components.composite_rsm_stack",
-    "batches": 3000,
+    "batches": 10000,
 
     "hparams_override": {
       "batch_size": 50,
       "build_ae": true,
       "build_rsm": false,
+      "build_gan": false,
 
       "ae_stack_batch_size": 50,
       "ae_stack_num_layers": 3,
@@ -23,7 +24,8 @@
       "ae_stack_filters_field_width": [5, 5, 5],
       "ae_stack_filters_field_height": [5, 5, 5],
       "ae_stack_filters_field_stride": [1, 2, 2],
-      "ae_stack_inhibition_decay": [0.1, 0.1, 0.1],
+      "ae_stack_inhibition_decay": [0.0, 0.0, 0.0],
+      "ae_stack_use_max_pool": ["encoding_pooled", "encoding_pooled", "none"],
 
       "ae_stack_sparsity": [5, 5, 5],
       "ae_stack_sparsity_output_factor": [1.5, 1.5, 1.5],
