@@ -23,6 +23,7 @@ import tensorflow as tf
 
 from pagi.utils.hparam_multi import HParamMulti
 from pagi.components.composite_component import CompositeComponent
+from pagi.components.visual_cortex_component import VisualCortexComponent
 
 from rsm.components.gan_component import GANComponent
 from rsm.components.sequence_memory_layer import SequenceMemoryLayer
@@ -45,15 +46,16 @@ class CompositeRSMStack(CompositeComponent):
     batch_size = 64
     hparams = tf.contrib.training.HParams(
         batch_size=batch_size,
+        build_ae=False,
         build_rsm=True,
-        build_ae=True,
-        build_gan=True,
+        build_gan=False,
 
         gan_rsm_input='encoding'
     )
 
     # create all possible sub component hparams
-    ae_stack = SparseConvAutoencoderStack.default_hparams()
+    # ae_stack = SparseConvAutoencoderStack.default_hparams()
+    ae_stack = VisualCortexComponent.default_hparams()
     rsm_stack = SequenceMemoryStack.default_hparams()
     gan_stack = GANComponent.default_hparams()
 
@@ -88,17 +90,8 @@ class CompositeRSMStack(CompositeComponent):
 
     return hparams
 
-  @property
-  def name(self):
-    return self._name
-
   def get_loss(self):
     return self.get_sub_component('output').get_loss()
-
-  def get_dual(self, name=None):  # pylint: disable=arguments-differ
-    if name is None:
-      return self._dual
-    return self.get_sub_component(name).get_dual()
 
   def build(self, input_values, input_shape, label_values, label_shape, hparams, decoder=None,
             name='composite-rsm-stack'):
@@ -111,11 +104,11 @@ class CompositeRSMStack(CompositeComponent):
         hparams: The hyperparameters for the model as tf.contrib.training.HParams.
         name: A globally unique graph name used as a prefix for all tensors and ops.
     """
-    self._name = name
+    self.name = name
     self._hparams = hparams
     self._input_values = input_values
 
-    with tf.variable_scope(self._name, reuse=tf.AUTO_REUSE):
+    with tf.variable_scope(self.name, reuse=tf.AUTO_REUSE):
       input_values_next = input_values
       input_shape_next = input_shape
 
@@ -140,6 +133,9 @@ class CompositeRSMStack(CompositeComponent):
     """Builds a stack of k-Sparse convolutional autoencoders."""
     ae_stack = SparseConvAutoencoderStack()
     ae_stack_hparams = SparseConvAutoencoderStack.default_hparams()
+
+    ae_stack = VisualCortexComponent()
+    ae_stack_hparams = VisualCortexComponent.default_hparams()
 
     ae_stack_hparams = HParamMulti.override(multi=self._hparams, target=ae_stack_hparams, component=self.ae_name)
     ae_stack.build(input_values, input_shape, ae_stack_hparams, self.ae_name)
