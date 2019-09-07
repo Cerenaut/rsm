@@ -49,8 +49,8 @@ class CompositeGANVideoWorkflow(CompositeGANWorkflow, CompositeVideoWorkflow):
   def _build_prior_fetches(self):
     return {'inputs': self._inputs, 'states': self._states, 'end_states': self._end_states}
 
-  def training(self, dataset_handle, global_step):  # pylint: disable=arguments-differ
-    batch_type, fetched, feed_dict, data_subset = super().training(dataset_handle, global_step)
+  def training_step(self, dataset_handle, global_step, phase_change=False):  # pylint: disable=arguments-differ
+    batch_type, fetched, feed_dict, data_subset = super().training_step(dataset_handle, global_step, phase_change)
     self._do_batch_after_hook(global_step, batch_type, fetched, feed_dict, data_subset)
 
   def testing(self, dataset_handle, global_step):

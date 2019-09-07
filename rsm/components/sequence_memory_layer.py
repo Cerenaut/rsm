@@ -893,12 +893,12 @@ class SequenceMemoryLayer(SummaryComponent):
     freq_cell_values = freq_cell.get_values()
 
     feed_dict = {
-      freq_cell_pl: freq_cell_values
+        freq_cell_pl: freq_cell_values
     }
 
     boost_a = 'boost-assign'
     fetches = {
-      boost_a: self._dual.get_op(boost_a)
+        boost_a: self._dual.get_op(boost_a)
     }
 
     # Update the variable
@@ -911,7 +911,7 @@ class SequenceMemoryLayer(SummaryComponent):
     #print('New boost: ', boost_values)
 
   def _build_update_boost(self):
-    """Builds the boost Variable an an assign op to be used periodically""" 
+    """Builds the boost Variable an an assign op to be used periodically"""
     freq_cell_pl = self._dual.get_pl(self.freq_cell)  # [cols * cells_per_col] 1d
     num_cells = self._hparams.cols * self._hparams.cells_per_col
     freq_target = self._hparams.sparsity / num_cells  # k/n where n is num cells
@@ -921,9 +921,9 @@ class SequenceMemoryLayer(SummaryComponent):
     # Say freq = 0
     # exp(0.052-0) = 1.053375743
     boost_cells_1d = tf.math.exp(freq_target - freq_cell_pl) * self._hparams.boost_factor
-    boost_shape_1d = [num_cells]
     boost_values = np.ones(num_cells)
-    #boost_v = tf.Variable(initial_value=boost_values, shape=boost_shape_1d, trainable=False, dtype=tf.float32)
+    # boost_shape_1d = [num_cells]
+    # boost_v = tf.Variable(initial_value=boost_values, shape=boost_shape_1d, trainable=False, dtype=tf.float32)
     boost_v = tf.Variable(initial_value=boost_values, trainable=False, dtype=tf.float32)
     boost_a = boost_v.assign(boost_cells_1d)
     self._dual.set_op('boost-assign', boost_a)
