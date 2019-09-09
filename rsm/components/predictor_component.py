@@ -71,6 +71,7 @@ class PredictorComponent(SummaryComponent):
         momentum_nesterov=False,
 
         nonlinearity=['leaky-relu'],
+        bias=True,
 
         # Geometry
         batch_size=80,
@@ -160,7 +161,25 @@ class PredictorComponent(SummaryComponent):
     for i, layer_size in enumerate(layer_sizes):
       activation = type_activation_fn(self._hparams.nonlinearity[i])
 
-      layer = tf.layers.Dense(layer_size, activation=activation, use_bias=True, name='prediction_layer_' + str(i + 1))
+      # Initialization
+      # Default: glorot_uniform_initializer
+      # Source: https://www.tensorflow.org/api_docs/python/tf/layers/Dense
+
+      # Smart
+      # https://adventuresinmachinelearning.com/weight-initialization-tutorial-tensorflow/
+      w_factor = 1.0  # factor=1.0 for Xavier, 2.0 for He
+      w_mode = 'FAN_IN'
+      #w_mode = 'FAN_AVG'
+      kernel_initializer = tf.contrib.layers.variance_scaling_initializer(factor=w_factor, mode=w_mode, uniform=False)
+
+      # Normal
+      #w_sd = 0.03
+      #kernel_initializer = random_normal_initializer(stddev=w_sd)
+      layer = tf.layers.Dense(layer_size,
+                              activation=activation,
+                              kernel_initializer=kernel_initializer,
+                              use_bias=self._hparams.bias,
+                              name='prediction_layer_' + str(i + 1))
       logging.info('Predictor layer: %d has size: %d and fn: %s ', i, layer_size, str(activation))
       self.layers.append(layer)
 
@@ -277,9 +296,10 @@ class PredictorComponent(SummaryComponent):
         l2_loss = tf.reduce_sum(l2_loss_w) + tf.reduce_sum(l2_loss_b)
 
         # Make the L2 loss scaling invariant to number of weights. the +1 is for biases
-        l2_normalizer = 1.0 / (num_cells * (num_inputs+1.0))
-        l2_scale = l2_normalizer * self._hparams.l2_regularizer
-        l2_loss_scaled = l2_loss * l2_scale
+        #l2_normalizer = 1.0 / (num_cells * (num_inputs+1.0))
+        #l2_scale = l2_normalizer * self._hparams.l2_regularizer
+        #l2_loss_scaled = l2_loss * l2_scale
+        l2_loss_scaled = l2_loss * self._hparams.l2_regularizer
         all_losses.append(l2_loss_scaled)
 
         i += 1
@@ -305,7 +325,7 @@ class PredictorComponent(SummaryComponent):
       keep_rate = self._hparams.keep_rate # reduced rate during training
     if batch_type == self.encoding:
       keep_rate = 1.0 # No dropout at test time
-    logging.debug('keep rate: %f', keep_rate)
+    logging.debug('Predictor keep rate: %f', keep_rate)
 
     keep = self._dual.get(self.keep)
     keep_pl = keep.get_pl()
