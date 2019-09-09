@@ -282,7 +282,7 @@ class TokenEmbeddingDataset(Dataset):  # pylint: disable=W0223
             mask = 0.0  # clear history
 
           # Useful debugging info, but very verbose:
-          #logging.info('NEXT: Dataset subset: %s batch %d mask: %f offset: %s len: %d of %d', subset_key, b, mask, i, z, num_words)
+          #logging.info('NEXT: Dataset subset: %s batch %d mask: %f offset: %s len: %d of %d max seq len %d', subset_key, b, mask, i, z, num_words, max_sequence_length)
 
           sequence_offsets[b] = i
           sequence_lengths[b] = z

@@ -138,6 +138,7 @@ class SequenceMemoryStack(SummaryComponent):
 
         inhibition_decay=[0.1],  # controls refractory period
         feedback_norm=[True],  # Whether to norm the feedbacks
+        feedback_decay_floor=[0.0],
         feedback_decay_rate=[0.0],  # Optional integrated/exp decay feedback
         feedback_keep_rate=[1.0],  # Optional dropout on feedback
         hidden_keep_rate=[1.0],  # Optional dropout on hidden layer
@@ -516,6 +517,7 @@ class SequenceMemoryStack(SummaryComponent):
 
       layer_hparams.inhibition_decay = self._hparams.inhibition_decay[i]
       layer_hparams.feedback_decay_rate = self._hparams.feedback_decay_rate[i]
+      layer_hparams.feedback_decay_floor = self._hparams.feedback_decay_floor[i]
       layer_hparams.feedback_norm = self._hparams.feedback_norm[i]
       layer_hparams.feedback_keep_rate = self._hparams.feedback_keep_rate[i]
       layer_hparams.hidden_keep_rate = self._hparams.hidden_keep_rate[i]

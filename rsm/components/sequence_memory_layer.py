@@ -73,6 +73,7 @@ class SequenceMemoryLayer(SummaryComponent):
         hidden_keep_rate=1.0,
         feedback_keep_rate=1.0,  # Optional dropout on feedback
         feedback_decay_rate=0.0,  # Optional integrated/exp decay feedback
+        feedback_decay_floor=0.0,  # if > 0, then clip to zero at this level
         feedback_norm=True,  # Option to normalize feedback
         feedback_norm_eps=0.0000000001,  # Prevents feedback norm /0
 
@@ -470,7 +471,15 @@ class SequenceMemoryLayer(SummaryComponent):
     # feedback_new = (feedback_old * self._hparams.feedback_decay_rate) + feedback_now
 
     # Maximum
-    feedback_new = tf.maximum(feedback_old * self._hparams.feedback_decay_rate, feedback_now)
+    if self._hparams.feedback_decay_floor > 0.0:
+      logging.info('Feedback decay floor at %f', self._hparams.feedback_decay_floor)
+      decayed_1 = feedback_old * self._hparams.feedback_decay_rate
+      threshold = tf.to_float(decayed_1 > self._hparams.feedback_decay_floor)
+      decayed = decayed_1 * threshold
+    else:
+      decayed = feedback_old * self._hparams.feedback_decay_rate
+
+    feedback_new = tf.maximum(decayed, feedback_now)
 
     return feedback_new
 
