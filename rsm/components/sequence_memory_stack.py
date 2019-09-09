@@ -142,6 +142,10 @@ class SequenceMemoryStack(SummaryComponent):
         feedback_keep_rate=[1.0],  # Optional dropout on feedback
         hidden_keep_rate=[1.0],  # Optional dropout on hidden layer
 
+        ff_bias=[False],
+        fb_bias=[False],
+        decode_bias=[True],
+
         # Sparse parameters:
         sparsity=[25],
         lifetime_sparsity_dends=False,
@@ -515,6 +519,10 @@ class SequenceMemoryStack(SummaryComponent):
       layer_hparams.feedback_norm = self._hparams.feedback_norm[i]
       layer_hparams.feedback_keep_rate = self._hparams.feedback_keep_rate[i]
       layer_hparams.hidden_keep_rate = self._hparams.hidden_keep_rate[i]
+
+      layer_hparams.ff_bias = self._hparams.ff_bias[i]
+      layer_hparams.fb_bias = self._hparams.fb_bias[i]
+      layer_hparams.decode_bias = self._hparams.decode_bias[i]
 
       layer_hparams.sparsity = self._hparams.sparsity[i]
       layer_hparams.lifetime_sparsity_dends = self._hparams.lifetime_sparsity_dends

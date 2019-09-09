@@ -208,7 +208,7 @@ class LanguageWorkflow(Workflow):
     # No effect if P=0
     if phase_change is True:
       logging.info('Phase change! Forgetting...')
-      stochastic_forgetting_probability = 1.0
+      stochastic_forgetting_probability = 1.0  # One-off change to prob.
     self._component.forget_history(self._session, stochastic_forgetting_probability)
 
     # Option to let dataset decide when to clear

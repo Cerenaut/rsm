@@ -95,7 +95,7 @@ class SequenceMemoryLayer(SummaryComponent):
         lifetime_sparsity_dends=False,
         lifetime_sparsity_cols=False,
 
-        # Bias (shouldn't need to change)
+        # Bias
         i_scale=1.0,
         i_bias=0.0,
         ff_bias=False,
@@ -274,11 +274,14 @@ class SequenceMemoryLayer(SummaryComponent):
   def forget_history(self, session, history_forgetting_probability, clear_previous=False):
     """Clears the history with fixed probability, but optionally keep the previous (next input)."""
     if history_forgetting_probability <= 0.0:
+      #print('Forget P=0 so ignore')
       return
 
+    #print('Forget P >0: ', history_forgetting_probability)
     if history_forgetting_probability < 1.0:
       p0 = history_forgetting_probability
       history_mask = tf_random_mask(p0, shape=(self._hparams.batch_size))
+      #print('Forget mask: ', history_mask)
     else:  # probability >= 1
       history_mask = np.zeros((self._hparams.batch_size))  # Clear all
 
@@ -965,7 +968,15 @@ class SequenceMemoryLayer(SummaryComponent):
     boost_cells_1d = self._dual.get_op(boost)  # Retrieve the variable
     boost_shape_5d = [1, 1, 1, self._hparams.cols, self._hparams.cells_per_col]
     boost_cells_5d = tf.reshape(boost_cells_1d, boost_shape_5d)
-    boosted_cell_5d = i_encoding_cells_5d * boost_cells_5d
+
+    # Optional hidden dropout
+    if self._hparams.hidden_keep_rate < 1.0:
+      hidden_keep_pl = self._dual.add(self.hidden_keep, shape=(), default_value=1.0).add_pl(default=True)
+      dropout_cells_5d = tf.nn.dropout(boost_cells_5d, hidden_keep_pl)  # Note, a scaling is applied
+    else:
+      dropout_cells_5d = boost_cells_5d
+
+    boosted_cell_5d = i_encoding_cells_5d * dropout_cells_5d
     return boosted_cell_5d
 
   # The code below didn't allow the boost to be stored as a Variable for later reloading
