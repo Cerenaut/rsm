@@ -167,14 +167,15 @@ class PredictorComponent(SummaryComponent):
 
       # Smart
       # https://adventuresinmachinelearning.com/weight-initialization-tutorial-tensorflow/
-      w_factor = 1.0  # factor=1.0 for Xavier, 2.0 for He
-      w_mode = 'FAN_IN'
+      #w_factor = 1.0  # factor=1.0 for Xavier, 2.0 for He
+      #w_mode = 'FAN_IN'
       #w_mode = 'FAN_AVG'
-      kernel_initializer = tf.contrib.layers.variance_scaling_initializer(factor=w_factor, mode=w_mode, uniform=False)
+      #kernel_initializer = tf.contrib.layers.variance_scaling_initializer(factor=w_factor, mode=w_mode, uniform=False)
 
       # Normal
-      #w_sd = 0.03
-      #kernel_initializer = random_normal_initializer(stddev=w_sd)
+      w_sd = 0.03
+      kernel_initializer = random_normal_initializer(stddev=w_sd)
+
       layer = tf.layers.Dense(layer_size,
                               activation=activation,
                               kernel_initializer=kernel_initializer,
