@@ -174,7 +174,7 @@ class PredictorComponent(SummaryComponent):
 
       # Normal
       w_sd = 0.03
-      kernel_initializer = random_normal_initializer(stddev=w_sd)
+      kernel_initializer = tf.random_normal_initializer(stddev=w_sd)
 
       layer = tf.layers.Dense(layer_size,
                               activation=activation,
