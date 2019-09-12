@@ -125,7 +125,7 @@ class TokenEmbeddingDataset(Dataset):  # pylint: disable=W0223
     logging.info('Embedding file: %s', embedding_file)
     logging.info('Token file: %s', token_file)
     logging.info('Token delimiter: %s', token_delimiter)
-    logging.info('EOS: %s', eos)
+    logging.info('EOS token: %s', eos)
     logging.info('Training Max seq. len.: %s', str(train_max_sequence_length))
     logging.info('Testing Max seq. len.: %s', str(test_max_sequence_length))
     #logging.info('Random offsets: %s', str(random_offsets))

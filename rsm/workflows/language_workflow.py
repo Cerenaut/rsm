@@ -65,6 +65,7 @@ class LanguageWorkflow(Workflow):
     hparams.add_hparam('embedding_file', '')
     hparams.add_hparam('token_file', '')
     hparams.add_hparam('token_delimiter', ',')
+    hparams.add_hparam('eos_token', '</s>')
 
     return hparams
 
@@ -88,12 +89,13 @@ class LanguageWorkflow(Workflow):
       embedding_file = self._opts['embedding_file']
       token_file = self._opts['token_file']
       token_delimiter =  self._opts['token_delimiter']
+      eos_token =  self._opts['eos_token']
 
       self._dataset = self._dataset_type(self._dataset_location)
       self._dataset.setup(int(self._hparams.batch_size),
                           train_max_sequence_length, test_max_sequence_length,
                           corpus_train_file, corpus_test_file,
-                          token_file, embedding_file, token_delimiter)
+                          token_file, embedding_file, token_delimiter, eos_token)
 
       # Dataset for training
       train_dataset = self._dataset.get_train(options=self._opts)
