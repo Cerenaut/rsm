@@ -161,7 +161,7 @@ class CompositeRSMStack(CompositeComponent):
     if self._hparams.gan_rsm_input == 'decoding':
       input_values_next = self._layers[0].get_op(SequenceMemoryLayer.decoding)
     else:
-      input_values_next = self._layers[0].get_op(SequenceMemoryLayer.encoding)
+      input_values_next = self._layers[-1].get_op(SequenceMemoryLayer.encoding)
 
     input_shape_next = input_values_next.get_shape().as_list()
 
@@ -185,7 +185,7 @@ class CompositeRSMStack(CompositeComponent):
     if self._hparams.build_rsm:
       if self._hparams.gan_rsm_input == 'decoding':
         return self.get_sub_component(CompositeRSMStack.rsm_name).get_layer(0).get_values(SequenceMemoryLayer.decoding)
-      return self.get_sub_component(CompositeRSMStack.rsm_name).get_layer(0).get_values(SequenceMemoryLayer.encoding)
+      return self.get_sub_component(CompositeRSMStack.rsm_name).get_layer(-1).get_values(SequenceMemoryLayer.encoding)
 
     if self._hparams.build_ae:
       return self.get_sub_component(CompositeRSMStack.ae_name).get_sub_component('output').get_encoding()

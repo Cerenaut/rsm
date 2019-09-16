@@ -169,14 +169,16 @@ class VideoWorkflow(ImageSequenceWorkflow):
     for b in range(self._hparams.batch_size):
       state = states[b]
 
+      decoding = self.get_decoded_frame()
+      previous = self.get_previous_frame()
+
+      # print('previous', np.min(previous), np.max(previous), np.mean(previous), np.std(previous))
+      # print('decoding', np.min(decoding), np.max(decoding), np.mean(decoding), np.std(decoding))
+
       # Check if the model has been primed
       if state >= (self._opts['prime_num_frames'] - 1):
-        decoding = self.get_decoded_frame()
-        previous = self.get_previous_frame()
-
         # Replace groundtruth with output decoding for the next step
         previous[b] = decoding[b]
-        # previous[b] = np.zeros_like(decoding[b])
         self.set_previous_frame(previous)
 
   def set_previous_frame(self, previous):
@@ -269,7 +271,12 @@ class VideoWorkflow(ImageSequenceWorkflow):
       # Export video
       fig1 = plt.figure(1)
       video_frames = []
-      for (frame, cmap) in output_frames:
+      for j, (frame, cmap) in enumerate(output_frames):
+        if j >= self._opts['prime_num_frames']:
+          plt.title('Self-looping')
+        else:
+          plt.title('Priming')
+
         video_frames.append([plt.imshow(frame, cmap=cmap, animated=True)])
       ani = animation.ArtistAnimation(fig1, video_frames, interval=50, blit=True,
                                       repeat_delay=1000)
@@ -277,12 +284,20 @@ class VideoWorkflow(ImageSequenceWorkflow):
 
       # Export frame by frame image
       num_frames = len(output_frames)
-      fig2 = plt.figure(figsize=(num_frames, 2))
-      gs1 = gridspec.GridSpec(1, num_frames)
+      fig2 = plt.figure(figsize=(num_frames + 1, 2))
+      gs1 = gridspec.GridSpec(1, num_frames + 1)
       gs1.update(wspace=0.025, hspace=0.05) # set the spacing between axes.
       plt.tight_layout()
 
-      for j, (frame, cmap) in enumerate(output_frames):
+      frame_idx = 0
+      for j in range(num_frames + 1):
+        if j == (self._opts['prime_num_frames'] - 1):
+          frame, cmap = output_frames[0]
+          frame = np.zeros_like(frame)
+        else:
+          frame, cmap = output_frames[frame_idx]
+          frame_idx += 1
+
         ax = plt.subplot(gs1[j])
         ax.axis('off')
         ax.set_aspect('equal')
