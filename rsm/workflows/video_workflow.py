@@ -271,13 +271,16 @@ class VideoWorkflow(ImageSequenceWorkflow):
       # Export video
       fig1 = plt.figure(1)
       video_frames = []
-      for j, (frame, cmap) in enumerate(output_frames):
-        if j >= self._opts['prime_num_frames']:
-          plt.title('Self-looping')
-        else:
-          plt.title('Priming')
 
-        video_frames.append([plt.imshow(frame, cmap=cmap, animated=True)])
+      for j, (frame, cmap) in enumerate(output_frames):
+        title = 'Priming'
+        if j >= self._opts['prime_num_frames']:
+          title = 'Self-looping'
+
+        ttl = plt.text(4, 1.2, title, horizontalalignment='center', verticalalignment='bottom')
+
+        video_frames.append([plt.imshow(frame, cmap=cmap, animated=True), ttl])
+
       ani = animation.ArtistAnimation(fig1, video_frames, interval=50, blit=True,
                                       repeat_delay=1000)
       ani.save(filepath + '.mp4')
