@@ -134,23 +134,23 @@ class GANComponent(SummaryComponent):
             layers.append(layer)
 
         # Build output layer
-        # if self.hparams.autoencoder == 'decode':
-        #   output_layer = layer_fn(
-        #       filters=1,
-        #       kernel_size=[
-        #           self.hparams.filters_field_height[i],
-        #           self.hparams.filters_field_width[i]
-        #       ],
-        #       padding='same',
-        #       strides=1,
-        #       activation=None,
-        #       kernel_initializer=initializer
-        #   )
-        # else:
-        flatten_layer = tf.layers.Flatten()
-        layers.append(flatten_layer)
+        if self.hparams.autoencoder == 'decode':
+          output_layer = layer_fn(
+              filters=1,
+              kernel_size=[
+                  self.hparams.filters_field_height[i],
+                  self.hparams.filters_field_width[i]
+              ],
+              padding='same',
+              strides=1,
+              activation=None,
+              kernel_initializer=initializer
+          )
+        else:
+          flatten_layer = tf.layers.Flatten()
+          layers.append(flatten_layer)
 
-        output_layer = tf.layers.Dense(self.output_size, activation=None, kernel_initializer=initializer)
+          output_layer = tf.layers.Dense(self.output_size, activation=None, kernel_initializer=initializer)
 
         layers.append(output_layer)
 
