@@ -227,7 +227,7 @@ class SequenceMemoryLayer(SummaryComponent):
   def update_recurrent(self):
     """If feedback is only the recurrent state, then simply copy it into place."""
     #if self._hparams.autoencode is True:
-    if self._hparams.mode == self.mode_predict_input:
+    if self._hparams.mode == self.mode_encode_input:
       return  # No feedback
 
     output = self.get_values(self.encoding)
