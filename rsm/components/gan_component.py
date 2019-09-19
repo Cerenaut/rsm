@@ -19,6 +19,8 @@ from __future__ import absolute_import
 from __future__ import division
 from __future__ import print_function
 
+import logging
+
 import numpy as np
 import tensorflow as tf
 
@@ -53,6 +55,7 @@ class GANComponent(SummaryComponent):
         generator_input_size=[28, 28, 1],
         generator_input_nonlinearity='relu',
         generator_output_nonlinearity='tanh',
+        generator_autoencoder='encode',
 
         # Discriminator-specific options
         discriminator_num_layers=2,
@@ -82,6 +85,9 @@ class GANComponent(SummaryComponent):
       with tf.variable_scope(self.name, reuse=tf.AUTO_REUSE, auxiliary_name_scope=False):
         layers = []
 
+        # initializer = tf.contrib.layers.variance_scaling_initializer()
+        initializer = tf.random_normal_initializer(mean=0., stddev=0.02)
+
         # if self.hparams.conditional:
         #   input_shape = tuple(self.hparams.input_size)
 
@@ -92,22 +98,60 @@ class GANComponent(SummaryComponent):
         #   reshape_layer = tf.keras.layers.Reshape(input_shape)
         #   layers.append(reshape_layer)
 
-        for i in range(self.hparams.num_layers):
-          layer = tf.layers.Conv2D(
+        def conv_block(i, fn=tf.layers.Conv2D, nonlinearity='leaky_relu'):
+          return fn(
               filters=self.hparams.filters[i],
               kernel_size=[
                   self.hparams.filters_field_height[i],
                   self.hparams.filters_field_width[i]
               ],
+              padding='same',
               strides=self.hparams.filters_field_stride[i],
-              activation=type_activation_fn(self.hparams.nonlinearity[i])
+              activation=type_activation_fn(nonlinearity),
+              kernel_initializer=initializer
           )
+
+        if self.hparams.autoencoder == 'decode':
+          layer_fn = tf.layers.Conv2DTranspose
+        else:
+          layer_fn = tf.layers.Conv2D
+
+        for i in range(self.hparams.num_layers):
+          layer = conv_block(i, layer_fn, nonlinearity=self.hparams.nonlinearity[i])
           layers.append(layer)
 
-        flatten_layer = tf.layers.Flatten()
-        layers.append(flatten_layer)
+        if self.hparams.autoencoder == 'both':
+          logging.info('Using autoencoder mode in %s.', self.name)
 
-        output_layer = tf.layers.Dense(self.output_size, activation=None)
+          decoder_nonlinearity = 'relu'
+
+          bottleneck = conv_block(-1, fn=tf.layers.Conv2D, nonlinearity=decoder_nonlinearity)
+          layers.append(bottleneck)
+
+          # Decoder
+          for i in range(self.hparams.num_layers - 1, -1, -1):
+            layer = conv_block(i, fn=tf.layers.Conv2DTranspose, nonlinearity=decoder_nonlinearity)
+            layers.append(layer)
+
+        # Build output layer
+        if self.hparams.autoencoder in ['decode', 'both']:
+          output_layer = layer_fn(
+              filters=1,
+              kernel_size=[
+                  self.hparams.filters_field_height[-1],
+                  self.hparams.filters_field_width[-1]
+              ],
+              padding='same',
+              strides=1,
+              activation=None,
+              kernel_initializer=initializer
+          )
+        else:
+          flatten_layer = tf.layers.Flatten()
+          layers.append(flatten_layer)
+
+          output_layer = tf.layers.Dense(self.output_size, activation=None, kernel_initializer=initializer)
+
         layers.append(output_layer)
 
         return layers
@@ -123,6 +167,7 @@ class GANComponent(SummaryComponent):
         outputs = inputs
         for layer in self.layers:
           outputs = layer(outputs)
+          print(outputs)
         output_nonlinearity = type_activation_fn(self.hparams.output_nonlinearity)
         return outputs, output_nonlinearity(outputs)
 
@@ -142,7 +187,8 @@ class GANComponent(SummaryComponent):
           input_size=hparams.generator_input_size,
           input_nonlinearity=hparams.generator_input_nonlinearity,
           output_nonlinearity=hparams.generator_output_nonlinearity,
-          conditional=hparams.conditional
+          conditional=hparams.conditional,
+          autoencoder=hparams.generator_autoencoder
       )
 
       super(GANComponent.Generator, self).__init__(
@@ -168,7 +214,8 @@ class GANComponent(SummaryComponent):
           input_size=hparams.discriminator_input_size,
           input_nonlinearity=hparams.discriminator_input_nonlinearity,
           output_nonlinearity=hparams.discriminator_output_nonlinearity,
-          conditional=hparams.conditional
+          conditional=hparams.conditional,
+          autoencoder=False
       )
 
       super(GANComponent.Discriminator, self).__init__(
