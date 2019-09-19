@@ -134,12 +134,12 @@ class GANComponent(SummaryComponent):
             layers.append(layer)
 
         # Build output layer
-        if self.hparams.autoencoder == 'decode':
+        if self.hparams.autoencoder in ['decode', 'both']:
           output_layer = layer_fn(
               filters=1,
               kernel_size=[
-                  self.hparams.filters_field_height[i],
-                  self.hparams.filters_field_width[i]
+                  self.hparams.filters_field_height[-1],
+                  self.hparams.filters_field_width[-1]
               ],
               padding='same',
               strides=1,
