@@ -61,11 +61,6 @@ class CompositeRSMStack(CompositeComponent):
 
     subcomponents = [ae_stack, rsm_stack, gan_stack]   # all possible subcomponents
 
-    def set_hparam_in_subcomponents(hparam_name, val):
-      """Sets the common hparams to sub components."""
-      for comp in subcomponents:
-        comp.set_hparam(hparam_name, val)
-
     rsm_stack.set_hparam('sparsity', [25])
     rsm_stack.set_hparam('cols', [200])
     rsm_stack.set_hparam('cells_per_col', [4])
@@ -81,7 +76,7 @@ class CompositeRSMStack(CompositeComponent):
     rsm_stack.set_hparam('lifetime_sparsity_dends', False)
 
     # default hparams in individual component should be consistent with component level hparams
-    set_hparam_in_subcomponents('batch_size', batch_size)
+    HParamMulti.set_hparam_in_subcomponents(subcomponents, 'batch_size', batch_size)
 
     # add sub components to the composite hparams
     HParamMulti.add(source=ae_stack, multi=hparams, component=CompositeRSMStack.ae_name)

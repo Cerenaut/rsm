@@ -251,6 +251,9 @@ class VideoWorkflow(ImageSequenceWorkflow):
       for i in range(0, len(l), n):
         yield l[i:i + n]
 
+    if isinstance(input_frames, list):
+      input_frames = np.dstack(input_frames)
+
     sequence_chunks = list(chunks(input_frames, self._sequence_length))
 
     for i, sequence in enumerate(sequence_chunks):
@@ -354,3 +357,6 @@ class VideoWorkflow(ImageSequenceWorkflow):
 
     if self._groundtruth_frames:
       self.frames_to_video(self._groundtruth_frames, filename='groundtruth')
+
+    if  self._output_frames and self._groundtruth_frames:
+      self.frames_to_video_coloured([self._output_frames, self._groundtruth_frames], filename='output_groundtruth')
