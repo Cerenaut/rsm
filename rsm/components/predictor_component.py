@@ -67,11 +67,10 @@ class PredictorComponent(SummaryComponent):
         optimize='accuracy',  # target, accuracy
         optimizer='adam',
         learning_rate=0.0005,
-        momentum=0.9,  # Ignore if adam
-        momentum_nesterov=False,
 
         nonlinearity=['leaky-relu'],
         bias=True,
+        init_sd=0.03,
 
         # Geometry
         batch_size=80,
@@ -79,7 +78,7 @@ class PredictorComponent(SummaryComponent):
 
         # Regularization
         keep_rate=1.0,
-        l2_regularizer=0.0,
+        l2=0.0,
         label_smoothing=0.0,  # adds a uniform weight to the training target distribution
 
         # Summary options
@@ -130,6 +129,24 @@ class PredictorComponent(SummaryComponent):
 
     self.reset()
 
+  def _build_initializers(self):
+    """Override to change the initializer. Returns weights and biases init."""
+    # TF Default: glorot_uniform_initializer
+    # Source: https://www.tensorflow.org/api_docs/python/tf/layers/Dense
+
+    # "Smart"
+    # https://adventuresinmachinelearning.com/weight-initialization-tutorial-tensorflow/
+    #w_factor = 1.0  # factor=1.0 for Xavier, 2.0 for He
+    #w_mode = 'FAN_IN'
+    #w_mode = 'FAN_AVG'
+    #kernel_initializer = tf.contrib.layers.variance_scaling_initializer(factor=w_factor, mode=w_mode, uniform=False)
+
+    # Normal
+    init_sd = self._hparams.init_sd
+    kernel_initializer = tf.random_normal_initializer(stddev=init_sd)
+    bias_initializer = kernel_initializer
+    return kernel_initializer, bias_initializer
+
   def _build(self):
     """Build the autoencoder network"""
 
@@ -160,25 +177,12 @@ class PredictorComponent(SummaryComponent):
 
     for i, layer_size in enumerate(layer_sizes):
       activation = type_activation_fn(self._hparams.nonlinearity[i])
-
-      # Initialization
-      # Default: glorot_uniform_initializer
-      # Source: https://www.tensorflow.org/api_docs/python/tf/layers/Dense
-
-      # Smart
-      # https://adventuresinmachinelearning.com/weight-initialization-tutorial-tensorflow/
-      #w_factor = 1.0  # factor=1.0 for Xavier, 2.0 for He
-      #w_mode = 'FAN_IN'
-      #w_mode = 'FAN_AVG'
-      #kernel_initializer = tf.contrib.layers.variance_scaling_initializer(factor=w_factor, mode=w_mode, uniform=False)
-
-      # Normal
-      w_sd = 0.03
-      kernel_initializer = tf.random_normal_initializer(stddev=w_sd)
+      kernel_initializer, bias_initializer = self._build_initializers()
 
       layer = tf.layers.Dense(layer_size,
                               activation=activation,
                               kernel_initializer=kernel_initializer,
+                              bias_initializer=bias_initializer,
                               use_bias=self._hparams.bias,
                               name='prediction_layer_' + str(i + 1))
       logging.info('Predictor layer: %d has size: %d and fn: %s ', i, layer_size, str(activation))
@@ -268,7 +272,7 @@ class PredictorComponent(SummaryComponent):
     self._dual.set_op(self.prediction_loss, prediction_loss)
 
     # Both paths: Regularization
-    if self._hparams.l2_regularizer == 0.0:
+    if self._hparams.l2 == 0.0:
       logging.info('NOT adding L2 weight regularization to predictor.')
       self._dual.set_op(self.loss, prediction_loss)
 
@@ -298,9 +302,9 @@ class PredictorComponent(SummaryComponent):
 
         # Make the L2 loss scaling invariant to number of weights. the +1 is for biases
         #l2_normalizer = 1.0 / (num_cells * (num_inputs+1.0))
-        #l2_scale = l2_normalizer * self._hparams.l2_regularizer
+        #l2_scale = l2_normalizer * self._hparams.l2
         #l2_loss_scaled = l2_loss * l2_scale
-        l2_loss_scaled = l2_loss * self._hparams.l2_regularizer
+        l2_loss_scaled = l2_loss * self._hparams.l2
         all_losses.append(l2_loss_scaled)
 
         i += 1

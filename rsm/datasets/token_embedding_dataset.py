@@ -66,7 +66,8 @@ class TokenEmbeddingDataset(Dataset):  # pylint: disable=W0223
 
   def get_train(self, preprocess=False, options=None):  # pylint: disable=W0221
     """Returns tf.data.Dataset object """
-    init_offsets = 'striped'
+    #init_offsets = 'striped'
+    init_offsets = 'random'
     wrap_offsets = 'random'
     max_sequence_length = self._train_max_sequence_length
     return self._dataset(preprocess, options, self._embedding, 'train', init_offsets=init_offsets, wrap_offsets=wrap_offsets, max_sequence_length=max_sequence_length)

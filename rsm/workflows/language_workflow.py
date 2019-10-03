@@ -215,12 +215,11 @@ class LanguageWorkflow(Workflow):
 
     # Option to let dataset decide when to clear
     # History update with per-batch-sample flag for whether to clear
-    #max_sequence_length = self._opts['max_sequence_length']
-    #if max_sequence_length > 0:
     subset = self._dataset.get_subset(data_subset)
     history_mask = subset['mask']
     self._component.update_history(self._session, history_mask)
 
+    # Priming (for testing the model only)
     self._priming(phase)
 
     # Provide new data
