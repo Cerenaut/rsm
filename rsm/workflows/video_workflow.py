@@ -251,9 +251,6 @@ class VideoWorkflow(ImageSequenceWorkflow):
       for i in range(0, len(l), n):
         yield l[i:i + n]
 
-    if isinstance(input_frames, list):
-      input_frames = np.dstack(input_frames)
-
     sequence_chunks = list(chunks(input_frames, self._sequence_length))
 
     for i, sequence in enumerate(sequence_chunks):
@@ -297,7 +294,7 @@ class VideoWorkflow(ImageSequenceWorkflow):
 
       frame_idx = 0
       for j in range(num_frames + 1):
-        if j == (self._opts['prime_num_frames'] - 1):
+        if j == self._opts['prime_num_frames']:
           frame, cmap = output_frames[0]
           frame = np.zeros_like(frame)
         else:
@@ -359,4 +356,6 @@ class VideoWorkflow(ImageSequenceWorkflow):
       self.frames_to_video(self._groundtruth_frames, filename='groundtruth')
 
     if  self._output_frames and self._groundtruth_frames:
-      self.frames_to_video_coloured([self._output_frames, self._groundtruth_frames], filename='output_groundtruth')
+      stacked_frames = np.concatenate(
+          [self._output_frames, np.zeros_like(self._output_frames), self._groundtruth_frames], axis=4)
+      self.frames_to_video(stacked_frames, filename='output_groundtruth')

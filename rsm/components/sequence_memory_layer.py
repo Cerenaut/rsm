@@ -529,7 +529,7 @@ class SequenceMemoryLayer(SummaryComponent):
     # ff input update - we work with the PREVIOUS ff input. This code stores the current input for access next time.
     input_shape_list = self._input_values.get_shape().as_list()
     previous_pl = self._dual.add(self.previous, shape=input_shape_list, default_value=0.0).add_pl()
-    self._dual.set_op(self.previous, self._input_values)
+    self._dual.set_op(self.previous, self._input_values, override=True)
 
     # FF input
     ff_target, ff_target_shape = self.get_target()
@@ -1015,7 +1015,7 @@ class SequenceMemoryLayer(SummaryComponent):
     # # Update cells' inhibition
     # inhibition_cells_5d = inhibition_cells_5d_pl * self._hparams.inhibition_decay # decay old inh
     # inhibition_cells_5d = tf.maximum(training_mask_cells_5d, inhibition_cells_5d)  # this should be per batch sample not only per dend
-    # self._dual.set_op(self.inhibition, inhibition_cells_5d)
+    # self._dual.set_op(self.inhibition, inhibition_cells_5d, override=True)
 
     # Update usage (test mask doesnt include lifetime bits)
     if self.use_freq():
@@ -1032,12 +1032,12 @@ class SequenceMemoryLayer(SummaryComponent):
     inhibition_cells_5d_pl = self._dual.get_pl(self.inhibition)
     inhibition_cells_5d = inhibition_cells_5d_pl * self._hparams.inhibition_decay # decay old inh
     inhibition_cells_5d = tf.maximum(training_mask_cells_5d, inhibition_cells_5d)  # this should be per batch sample not only per dend
-    self._dual.set_op(self.inhibition, inhibition_cells_5d)
+    self._dual.set_op(self.inhibition, inhibition_cells_5d, override=True)
 
   # def _build_update_boosting(self, training_mask_cells_5d):
   #   # Update cells' boost given activity
   #   boost_cells_5d_pl = self._dual.get_pl(self.inhibition)
-  #   self._dual.set_op(self.inhibition, boost_cells_5d)
+  #   self._dual.set_op(self.inhibition, boost_cells_5d, override=True)
 
   def _build_update_usage(self, mask_cells_5d):
     """Build graph op to update usage."""
