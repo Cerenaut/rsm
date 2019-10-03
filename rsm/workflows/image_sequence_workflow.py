@@ -152,7 +152,7 @@ class ImageSequenceWorkflow(Workflow):
         training_epoch = self._dataset.get_training_epoch(self._hparams.batch_size, training_step)
 
         # Perform the training, and retrieve feed_dict for evaluation phase
-        feed_dict = self.training(training_handle, batch)
+        feed_dict = self.training_step(training_handle, batch)
 
         self._on_after_training_batch(batch, training_step, training_epoch)
 

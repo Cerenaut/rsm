@@ -1051,14 +1051,14 @@ class SequenceMemoryLayer(SummaryComponent):
     usage_col_1d = tf.reduce_sum(mask_cells_5d, axis=[0, 1, 2, 4]) # reduce over b,h,w: 0,1,2, 4 leaving col (3)
     usage_col_pl = self._dual.get(self.usage_col).get_pl()
     usage_col_op = usage_col_pl + usage_col_1d
-    self._dual.set_op(self.usage_col, usage_col_op)
+    self._dual.set_op(self.usage_col, usage_col_op, override=True)
 
     num_cells = self._hparams.cols * self._hparams.cells_per_col
     usage_cell_2d = tf.reduce_sum(mask_cells_5d, axis=[0, 1, 2]) # reduce over b,h,w: 0,1,2 leaving col,cell (3,4)
     usage_cell_1d = tf.reshape(usage_cell_2d, shape=[num_cells])
     usage_cell_pl = self._dual.get(self.usage_cell).get_pl()
     usage_cell_op = usage_cell_pl + usage_cell_1d
-    self._dual.set_op(self.usage_cell, usage_cell_op)
+    self._dual.set_op(self.usage_cell, usage_cell_op, override=True)
 
   def _build_nonlinearities(self, f_encoding_cells_5d, r_encoding_cells_5d, b_encoding_cells_5d, mask_cells_5d):
     """Mask the encodings, sum them, and apply nonlinearity. Don't backprop into the mask."""

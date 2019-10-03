@@ -1,21 +1,24 @@
 {
   "experiment-options": {
-    "workflow": "workflows.image_sequence_workflow",
-    "dataset": "datasets.mnist_sequence_dataset",
-    "component": "components.sequence_memory_stack",
+    "workflow": "rsm.workflows.image_sequence_workflow",
+    "dataset": "rsm.datasets.mnist_sequence_dataset",
+    "component": "rsm.components.sequence_memory_stack",
     "batches": 50000,
+
     "hparams_override": {
-      "num_layers":1,
+      "num_layers": 1,
       "batch_size": 300,
 
-      "memory_training_interval":[0,-1],
-      "memory_summarize_input":true,
-      "memory_summarize_encoding":true,
-      "memory_summarize_weights":true,
-      "memory_summarize_freq":true,
+      "memory_training_interval": [0,-1],
+      "memory_summarize_input": false,
+      "memory_summarize_encoding": false,
+      "memory_summarize_decoding": true,
+      "memory_summarize_weights": false,
+      "memory_summarize_freq": false,
 
       "predictor_optimize": "accuracy",
-      "predictor_nonlinearity":["leaky-relu","leaky-relu"],
+      "predictor_nonlinearity": ["leaky-relu", "leaky-relu"],
+
       "sparsity": [25],
       "cols": [200],
       "cells_per_col": [4],
@@ -23,9 +26,9 @@
       "inhibition_decay":[0.1],
       "feedback_norm":[false],
 
-      "filters_field_width": 28,
-      "filters_field_height": 28,
-      "filters_field_stride": 28,
+      "filters_field_width": [28],
+      "filters_field_height": [28],
+      "filters_field_stride": [28],
 
       "lifetime_sparsity_cols": false,
       "lifetime_sparsity_dends": false
