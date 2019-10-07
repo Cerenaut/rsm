@@ -964,6 +964,11 @@ class SequenceMemoryLayer(SummaryComponent):
       return
     #print('YES updating boost - training batch type: ', batch_type)
 
+    # Suspend boost changes when training has finished.
+    do_training = tf_do_training(batch_type, self._hparams.training_interval, self._training_batch_count, name=self.name)
+    if not do_training:
+      return
+
     freq_cell = self._dual.get(self.freq_cell)
     freq_cell_pl = freq_cell.get_pl()  # [cols * cells_per_col] 1d
     freq_cell_values = freq_cell.get_values()
