@@ -139,6 +139,8 @@ class SequenceMemoryLayer(SummaryComponent):
   freq_col = 'freq-col'
   freq_cell = 'freq-cell'
 
+  boost = 'boost'
+  boost_assign = 'boost-assign'
   boost_factor = 'boost-factor'
   prediction_input = 'prediction-input'
   feedback_keep = 'feedback-keep'
@@ -970,7 +972,7 @@ class SequenceMemoryLayer(SummaryComponent):
       freq_cell_pl: freq_cell_values
     }
 
-    boost_a = 'boost-assign'
+    boost_a = self.boost_assign
     fetches = {
       boost_a: self._dual.get_op(boost_a)
     }
@@ -980,8 +982,7 @@ class SequenceMemoryLayer(SummaryComponent):
 
     # Off graph copy of boost values
     boost_values = fetched[boost_a]
-    boost = 'boost'
-    self._dual.set_values(boost, boost_values)
+    self._dual.set_values(self.boost, boost_values)
     #print('New boost: ', boost_values)
 
   def _build_update_boost(self):
@@ -1003,14 +1004,13 @@ class SequenceMemoryLayer(SummaryComponent):
     #boost_v = tf.Variable(initial_value=boost_values, shape=boost_shape_1d, trainable=False, dtype=tf.float32)
     boost_v = tf.Variable(initial_value=boost_values, trainable=False, dtype=tf.float32)
     boost_a = boost_v.assign(boost_cells_1d)
-    self._dual.set_op('boost-assign', boost_a)
-    self._dual.set_op('boost', boost_v)
+    self._dual.set_op(self.boost_assign, boost_a)
+    self._dual.set_op(self.boost, boost_v)
 
   def _build_boosting(self, i_encoding_cells_5d):
     """Builds boost-related features"""
     self._build_update_boost()
-    boost = 'boost'
-    boost_cells_1d = self._dual.get_op(boost)  # Retrieve the variable
+    boost_cells_1d = self._dual.get_op(self.boost)  # Retrieve the variable
     boost_shape_5d = [1, 1, 1, self._hparams.cols, self._hparams.cells_per_col]
     boost_cells_5d = tf.reshape(boost_cells_1d, boost_shape_5d)
 
@@ -1597,7 +1597,7 @@ class SequenceMemoryLayer(SummaryComponent):
       summaries.append(lifetime_mask_summary)
 
       if self.use_boosting():
-        boost_cell = self._dual.get_op('boost')  # Now a variable
+        boost_cell = self._dual.get_op(self.boost)  # Now a variable
         summaries.append(tf.summary.histogram('boost_cell_hist', boost_cell))
 
 
