@@ -216,9 +216,14 @@ class VideoWorkflow(ImageSequenceWorkflow):
 
     return feed_dict
 
+  all_mse_gan = []
+  all_mse_rsm = []
+  all_mse_prev = []
+  previous_frame = None
+
   def _do_batch_after_hook(self, global_step, batch_type, fetched, feed_dict, data_subset):
     """Things to do after a batch is completed."""
-    del global_step, feed_dict, fetched
+    del feed_dict, fetched
 
     # Test-time conditions
     if batch_type == 'encoding' and data_subset == 'test':
@@ -231,6 +236,65 @@ class VideoWorkflow(ImageSequenceWorkflow):
       # Collect samples for video export
       self._output_frames.append(decoding)
       self._groundtruth_frames.append(self._inputs_vals)
+
+      if self.previous_frame is None:
+        self.previous_frame = np.zeros_like(self._inputs_vals)
+
+      def denormalize(arr):
+        eps = 1e-8
+        return ((arr - arr.min()) * (1/(arr.max() - arr.min() + eps) * 255)).astype('uint8')
+
+      def unpad(x, pad_width):
+        slices = []
+        for c in pad_width:
+          e = None if c[1] == 0 else -c[1]
+          slices.append(slice(c[0], e))
+        return x[tuple(slices)]
+
+      A = self._inputs_vals
+      B = decoding
+      C = self.previous_frame
+      D = self._component.get_gan_inputs()
+
+      # Reverse the padding
+      padding_size = self._opts['frame_padding_size']
+      if padding_size > 0:
+        pad_h = [padding_size] * 2
+        pad_w = [padding_size] * 2
+
+        pad_width = [[0, 0], pad_h, pad_w, [0, 0]]
+
+        A = unpad(A, pad_width)
+        B = unpad(B, pad_width)
+        C = unpad(C, pad_width)
+        D = unpad(D, pad_width)
+
+      num_features = np.prod(A.shape[1:])
+
+      mse_gan = ((A - B)**2).mean(axis=None) * num_features
+      mse_rsm = ((A - D)**2).mean(axis=None) * num_features
+      mse_prev = ((A - C)**2).mean(axis=None) * num_features
+
+      self.all_mse_gan.append(mse_gan)
+      self.all_mse_rsm.append(mse_rsm)
+      self.all_mse_prev.append(mse_prev)
+
+      avg_mse_gan = np.average(self.all_mse_gan)
+      avg_mse_rsm = np.average(self.all_mse_rsm)
+      avg_mse_prev = np.average(self.all_mse_prev)
+
+      # Write summaries
+      summary = tf.Summary()
+      summary.value.add(tag=self._component.name + '/summaries/' + batch_type + '/avg_mse_gan',
+                        simple_value=avg_mse_gan)
+      summary.value.add(tag=self._component.name + '/summaries/' + batch_type + '/avg_mse_rsm',
+                        simple_value=avg_mse_rsm)
+      summary.value.add(tag=self._component.name + '/summaries/' + batch_type + '/avg_mse_prev',
+                        simple_value=avg_mse_prev)
+      self._writer.add_summary(summary, global_step)
+      self._writer.flush()
+
+      self.previous_frame = self._inputs_vals
 
     # Output as feedback for next step
     self._component.update_recurrent_and_feedback()
@@ -314,7 +378,7 @@ class VideoWorkflow(ImageSequenceWorkflow):
     """Evaluation method."""
     logging.info('Evaluate starting...')
 
-    self._test_on_training_set = True
+    self._test_on_training_set = False
     if self._test_on_training_set is True:
       testing_handle = self._session.run(self._dataset_iterators['training'].string_handle())
     else:
@@ -348,14 +412,17 @@ class VideoWorkflow(ImageSequenceWorkflow):
 
       self.testing(testing_handle, test_batch)
 
+    export_videos = False
+
+    if export_videos:
     # Create videos from frames
-    if self._output_frames:
-      self.frames_to_video(self._output_frames, filename='output')
+      if self._output_frames:
+        self.frames_to_video(self._output_frames, filename='output')
 
-    if self._groundtruth_frames:
-      self.frames_to_video(self._groundtruth_frames, filename='groundtruth')
+      if self._groundtruth_frames:
+        self.frames_to_video(self._groundtruth_frames, filename='groundtruth')
 
-    if  self._output_frames and self._groundtruth_frames:
-      stacked_frames = np.concatenate(
-          [self._output_frames, np.zeros_like(self._output_frames), self._groundtruth_frames], axis=4)
-      self.frames_to_video(stacked_frames, filename='output_groundtruth')
+      if  self._output_frames and self._groundtruth_frames:
+        stacked_frames = np.concatenate(
+            [self._output_frames, np.zeros_like(self._output_frames), self._groundtruth_frames], axis=4)
+        self.frames_to_video(stacked_frames, filename='output_groundtruth')
