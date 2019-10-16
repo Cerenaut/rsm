@@ -5,6 +5,10 @@
     "component": "rsm.components.composite_rsm_stack",
     "batches": 200000,
 
+
+
+
+
     "hparams_override": {
       "batch_size": 256,
       "build_ae": false,
@@ -18,7 +22,7 @@
       "rsm_stack_loss_type": "mse",
       "rsm_stack_connectivity": "bi",
       "rsm_stack_memory_training_interval": [0, -1],
-      "rsm_stack_memory_summarize_input": true,
+      "rsm_stack_memory_summarize_input": false,
       "rsm_stack_memory_summarize_encoding": false,
       "rsm_stack_memory_summarize_decoding": true,
       "rsm_stack_memory_summarize_weights": false,
@@ -30,12 +34,12 @@
       "rsm_stack_decode_mode": ["conv", "conv"],
       "rsm_stack_sparsity": [3, 5],
       "rsm_stack_cols": [64, 128],
-      "rsm_stack_cells_per_col": [16, 16],
+      "rsm_stack_cells_per_col": [8, 8],
       "rsm_stack_freq_min": 0.01,
       "rsm_stack_freq_update_interval": -1,
       "rsm_stack_freq_learning_rate": 0.1,
       "rsm_stack_inhibition_decay": [0.8, 0.8],
-      "rsm_stack_feedback_decay_rate": [0.8, 0.8],
+      "rsm_stack_feedback_decay_rate": [0.0, 0.0],
       "rsm_stack_feedback_keep_rate": [0.5, 0.5],
       "rsm_stack_feedback_norm": [true, true],
       "rsm_stack_filters_field_width": [5, 3],
@@ -58,7 +62,7 @@
       "gan_generator_filters_field_stride": [1, 2, 1],
       "gan_generator_nonlinearity": ["leaky_relu", "leaky_relu", "leaky_relu"],
       "gan_generator_loss_mse_lambda": 1.0,
-      "gan_generator_loss_adv_lambda": 0.5,
+      "gan_generator_loss_adv_lambda": 0.0002,
       "gan_generator_learning_rate": 0.0005,
       "gan_generator_output_nonlinearity": "sigmoid",
       "gan_generator_autoencoder": "both",
