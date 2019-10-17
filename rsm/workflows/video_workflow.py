@@ -412,7 +412,7 @@ class VideoWorkflow(ImageSequenceWorkflow):
 
       self.testing(testing_handle, test_batch)
 
-    export_videos = False
+    export_videos = True
 
     if export_videos:
     # Create videos from frames

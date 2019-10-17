@@ -3,14 +3,14 @@
     "workflow": "rsm.workflows.composite_gan_video_workflow",
     "dataset": "rsm.datasets.bouncing_balls_dataset",
     "component": "rsm.components.composite_rsm_stack",
-    "batches": 50000,
+    "batches": 29000,
 
-    "checkpoint": "/home/incubator/agief-remote-run/rsm/run/summaries_20191015-095527/model.ckpt-50000",
+    "checkpoint": "/home/incubator/agief-remote-run/rsm/run/summaries_20191017-155103/model.ckpt-29000",
 
 
 
     "hparams_override": {
-      "batch_size": 256,
+      "batch_size": 200,
       "build_ae": false,
       "build_rsm": true,
       "build_gan": true,
@@ -18,7 +18,7 @@
       "gan_rsm_input": "decoding",
 
       "rsm_stack_num_layers": 2,
-      "rsm_stack_batch_size": 256,
+      "rsm_stack_batch_size": 200,
       "rsm_stack_loss_type": "mse",
       "rsm_stack_connectivity": "bi",
       "rsm_stack_memory_training_interval": [0, -1],
@@ -54,7 +54,7 @@
       "rsm_stack_boost_factor": [0.0, 0.0],
       "rsm_stack_pool_size": [2, 1],
 
-      "gan_batch_size": 256,
+      "gan_batch_size": 200,
       "gan_generator_num_layers": 3,
       "gan_generator_filters": [64, 128, 256],
       "gan_generator_filters_field_width": [5, 5, 5],
