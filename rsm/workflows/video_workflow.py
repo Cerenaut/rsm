@@ -348,6 +348,7 @@ class VideoWorkflow(ImageSequenceWorkflow):
       ani = animation.ArtistAnimation(fig1, video_frames, interval=50, blit=True,
                                       repeat_delay=1000)
       ani.save(filepath + '.mp4')
+      plt.close(fig1)
 
       # Export frame by frame image
       num_frames = len(output_frames)
@@ -370,6 +371,7 @@ class VideoWorkflow(ImageSequenceWorkflow):
         ax.set_aspect('equal')
         ax.imshow(frame, cmap=cmap)
       fig2.savefig(filepath + '.png', bbox_inches='tight')
+      plt.close(fig2)
 
   def run(self, num_batches, evaluate, train=True):
     super(ImageSequenceWorkflow, self).run(num_batches, evaluate, train)  # pylint: disable=bad-super-call
