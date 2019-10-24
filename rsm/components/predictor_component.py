@@ -34,6 +34,7 @@ from pagi.components.summary_component import SummaryComponent
 
 class PredictorComponent(SummaryComponent):
   """
+  TODO: Rename to ClassifierComponent (except: name taken.) Maybe NeuralClassifierComponent
   A stack of fully-connected dense layers for a supervised function approximation purpose,
   such as classification.
   """
@@ -75,6 +76,10 @@ class PredictorComponent(SummaryComponent):
         # Geometry
         batch_size=80,
         hidden_size=[200],
+
+        # Norm
+        norm_type = 'sum',  # Or None, currently
+        norm_eps = 1.0e-11,
 
         # Regularization
         keep_rate=1.0,
@@ -147,13 +152,35 @@ class PredictorComponent(SummaryComponent):
     bias_initializer = kernel_initializer
     return kernel_initializer, bias_initializer
 
+  def _build_input_norm(self, input_4d, input_shape_4d):
+    """Normalize/scale the input using the sum of the inputs."""
+    # Optionally apply a norm to make input constant sum
+    # NOTE: Assuming here it is CORRECT to norm over conv w,h
+    if self._hparams.norm_type is not None:
+      if self._hparams.norm_type == 'sum':
+        eps = self._hparams.norm_eps
+        sum_input = tf.reduce_sum(input_4d, axis=[1, 2, 3], keepdims=True) + eps
+        norm_input_4d = tf.divide(input_4d, sum_input)
+
+        # TODO investigate alternative norm, e.g. frobenius norm:
+        #frobenius_norm = tf.sqrt(tf.reduce_sum(tf.square(input_values_next), axis=[1, 2, 3], keepdims=True))
+        # Layer norm..? There has to be a better norm than this.
+        # https://mlexplained.com/2018/11/30/an-overview-of-normalization-methods-in-deep-learning/
+        # https://mlexplained.com/2018/01/10/an-intuitive-explanation-of-why-batch-normalization-really-works-normalization-in-deep-learning-part-1/
+    else:
+      norm_input_4d = input_4d
+    return norm_input_4d
+
   def _build(self):
     """Build the autoencoder network"""
+
+    # Norm inputs before flattening (e.g. to exploit local norm concepts)
+    input_values = self._build_input_norm(self._input_values, self._input_shape)
 
     # Flatten inputs
     input_volume = np.prod(self._input_shape[1:])
     input_shape_1d = [self._hparams.batch_size, input_volume]
-    input_values_1d = tf.reshape(self._input_values, input_shape_1d)
+    input_values_1d = tf.reshape(input_values, input_shape_1d)
 
     target_shape_list = self._target_values.get_shape().as_list()
     target_volume = np.prod(target_shape_list[1:])

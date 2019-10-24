@@ -79,7 +79,7 @@ class SequenceMemoryStack(SummaryComponent):
         uniform_mass=0.0,
         input_mass=0.0,
         layer_mass=1.0,  # Default to only use layer
-        ensemble_norm_eps=0.0000000001,  # 0.0001%
+        ensemble_norm_eps=1.0e-11,  # 0.0001%
 
         mode='predict-input',
         #autoencode=False,
@@ -113,8 +113,8 @@ class SequenceMemoryStack(SummaryComponent):
         predictor_label_smoothing=0.0,
 
         # Memory predictor options
-        predictor_integrate_input=False,
-        predictor_norm_input=True,
+        #predictor_integrate_input=False, deprecated
+        predictor_norm_type='sum',
 
         # Regularization, 0=Off
         f_l2=[0.0],
@@ -148,11 +148,23 @@ class SequenceMemoryStack(SummaryComponent):
         inhibition_decay=[0.1],  # controls refractory period
         inhibition_with_mask=True,
 
-        feedback_norm=[True],  # Whether to norm the feedbacks
-        feedback_decay_floor=[0.0],
-        feedback_decay_rate=[0.0],  # Optional integrated/exp decay feedback
-        feedback_keep_rate=[1.0],  # Optional dropout on feedback
         hidden_keep_rate=[1.0],  # Optional dropout on hidden layer
+
+        f_keep_rate=[1.0],  # Optional dropout
+        f_decay_rate=[0.0],  # Optional integrated/exp decay
+        f_decay_floor=[0.0],  # if > 0, then clip to zero at this level
+        f_norm_type=[None],  # Option to normalize
+        f_norm_eps=[1.0e-11],  # Prevents norm /0
+        f_decay_trainable=[False],
+        f_decay_rate_max=[0.95],  # If trainable, then this is the max decay rate
+
+        rb_keep_rate=[1.0],  # Optional dropout on feedback
+        rb_decay_rate=[0.0],  # Optional integrated/exp decay feedback
+        rb_decay_floor=[0.0],  # if > 0, then clip to zero at this level
+        rb_norm_type=['sum'],  # Option to normalize feedback
+        rb_norm_eps=[1.0e-11],  # Prevents feedback norm /0
+        rb_decay_trainable=[False],
+        rb_decay_rate_max=[0.95],  # If trainable, then this is the max decay rate
 
         # Sparse parameters:
         sparsity=[25],
@@ -426,8 +438,8 @@ class SequenceMemoryStack(SummaryComponent):
   def _build_layer_prediction_input(self):
     prediction_layer_idx = self.get_prediction_layer()
     prediction_layer = self._layers[prediction_layer_idx]
-    prediction_input = prediction_layer.get_op(SequenceMemoryLayer.prediction_input)
-    prediction_input_shape = prediction_layer.get_shape(SequenceMemoryLayer.prediction_input)
+    prediction_input = prediction_layer.get_op(SequenceMemoryLayer.encoding)
+    prediction_input_shape = prediction_layer.get_shape(SequenceMemoryLayer.encoding)
     return prediction_input, prediction_input_shape
 
   def _build_input_prediction_input(self):
@@ -504,8 +516,8 @@ class SequenceMemoryStack(SummaryComponent):
       layer_hparams.freq_learning_rate = self._hparams.freq_learning_rate
       layer_hparams.freq_min = self._hparams.freq_min
 
-      layer_hparams.predictor_norm_input = self._hparams.predictor_norm_input
-      layer_hparams.predictor_integrate_input = self._hparams.predictor_integrate_input
+      #layer_hparams.predictor_norm_input = self._hparams.predictor_norm_input
+      #layer_hparams.predictor_integrate_input = self._hparams.predictor_integrate_input
 
       layer_hparams.f_l2 = self._hparams.f_l2[i]
       layer_hparams.r_l2 = self._hparams.r_l2[i]
@@ -524,6 +536,7 @@ class SequenceMemoryStack(SummaryComponent):
 
       layer_hparams.decode_mode = self._hparams.decode_mode[i]
       layer_hparams.decode_nonlinearity = self._hparams.decode_nonlinearity[i]
+
       layer_hparams.boost_factor = self._hparams.boost_factor[i]
       layer_hparams.boost_factor_decay = self._hparams.boost_factor_decay[i]
       layer_hparams.boost_factor_update_interval = self._hparams.boost_factor_update_interval[i]
@@ -531,11 +544,23 @@ class SequenceMemoryStack(SummaryComponent):
       layer_hparams.inhibition_decay = self._hparams.inhibition_decay[i]
       layer_hparams.inhibition_with_mask = self._hparams.inhibition_with_mask
 
-      layer_hparams.feedback_decay_rate = self._hparams.feedback_decay_rate[i]
-      layer_hparams.feedback_decay_floor = self._hparams.feedback_decay_floor[i]
-      layer_hparams.feedback_norm = self._hparams.feedback_norm[i]
-      layer_hparams.feedback_keep_rate = self._hparams.feedback_keep_rate[i]
       layer_hparams.hidden_keep_rate = self._hparams.hidden_keep_rate[i]
+
+      layer_hparams.f_keep_rate = self._hparams.f_keep_rate[i]
+      layer_hparams.f_decay_rate = self._hparams.f_decay_rate[i]
+      layer_hparams.f_decay_floor = self._hparams.f_decay_floor[i]
+      layer_hparams.f_norm_type = self._hparams.f_norm_type[i]
+      layer_hparams.f_norm_eps = self._hparams.f_norm_eps[i]
+      layer_hparams.f_decay_trainable = self._hparams.f_decay_trainable[i]
+      layer_hparams.f_decay_rate_max = self._hparams.f_decay_rate_max[i]
+
+      layer_hparams.rb_keep_rate = self._hparams.rb_keep_rate[i]
+      layer_hparams.rb_decay_rate = self._hparams.rb_decay_rate[i]
+      layer_hparams.rb_decay_floor = self._hparams.rb_decay_floor[i]
+      layer_hparams.rb_norm_type = self._hparams.rb_norm_type[i]
+      layer_hparams.rb_norm_eps = self._hparams.rb_norm_eps[i]
+      layer_hparams.rb_decay_trainable = self._hparams.rb_decay_trainable[i]
+      layer_hparams.rb_decay_rate_max = self._hparams.rb_decay_rate_max[i]
 
       layer_hparams.sparsity = self._hparams.sparsity[i]
       layer_hparams.lifetime_sparsity_dends = self._hparams.lifetime_sparsity_dends
@@ -615,10 +640,10 @@ class SequenceMemoryStack(SummaryComponent):
     predictor_hparams.learning_rate = self._hparams.learning_rate
     predictor_hparams.batch_size = self._hparams.batch_size
 
-    predictor_hparams.uniform_mass = 0.0
     predictor_hparams.training_interval = self._hparams.predictor_training_interval
     predictor_hparams.nonlinearity = self._hparams.predictor_nonlinearity
     predictor_hparams.hidden_size = self._hparams.predictor_hidden_size
+    predictor_hparams.norm_type = self._hparams.predictor_norm_type
     predictor_hparams.keep_rate = self._hparams.predictor_keep_rate
     predictor_hparams.init_sd = self._hparams.predictor_init_sd
     predictor_hparams.l2 = self._hparams.predictor_l2

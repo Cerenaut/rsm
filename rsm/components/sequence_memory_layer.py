@@ -61,16 +61,27 @@ class SequenceMemoryLayer(SummaryComponent):
         inhibition_decay=0.1,  # controls refractory period
         inhibition_with_mask=True,
 
-        predictor_norm_input=True,
-        predictor_integrate_input=False,  # default: only current cells
+        # Deprecated features
+        #predictor_norm_input=True,
+        #predictor_integrate_input=False,  # default: only current cells
+        # Deprecated features
 
-        # Feedback
-        hidden_keep_rate=1.0,
-        feedback_keep_rate=1.0,  # Optional dropout on feedback
-        feedback_decay_rate=0.0,  # Optional integrated/exp decay feedback
-        feedback_decay_floor=0.0,  # if > 0, then clip to zero at this level
-        feedback_norm=True,  # Option to normalize feedback
-        feedback_norm_eps=0.0000000001,  # Prevents feedback norm /0
+        # Dendrites
+        f_keep_rate=1.0,  # Optional dropout
+        f_decay_rate=0.0,  # Optional integrated/exp decay
+        f_decay_floor=0.0,  # if > 0, then clip to zero at this level
+        f_norm_type=None,  # Option to normalize
+        f_norm_eps=1.0e-11,  # Prevents norm /0
+        f_decay_trainable=False,
+        f_decay_rate_max = 0.95,  # If trainable, then this is the max decay rate
+
+        rb_keep_rate=1.0,  # Optional dropout on feedback
+        rb_decay_rate=0.0,  # Optional integrated/exp decay feedback
+        rb_decay_floor=0.0,  # if > 0, then clip to zero at this level
+        rb_norm_type='sum',  # Option to normalize feedback
+        rb_norm_eps=1.0e-11,  # Prevents feedback norm /0
+        rb_decay_trainable=False,
+        rb_decay_rate_max = 0.95,  # If trainable, then this is the max decay rate
 
         # Geometry
         filters=-1,  # Ignored, but inherited
@@ -104,6 +115,7 @@ class SequenceMemoryLayer(SummaryComponent):
         d_bias=True,  # Currently ignored (always on)
 
         # Regularization, 0=Off
+        hidden_keep_rate=1.0,
         f_l2=0.0,  # feed Forward
         r_l2=0.0,  # Recurrent
         b_l2=0.0,  # feed-Back
@@ -142,8 +154,9 @@ class SequenceMemoryLayer(SummaryComponent):
   boost = 'boost'
   boost_assign = 'boost-assign'
   boost_factor = 'boost-factor'
-  prediction_input = 'prediction-input'
-  feedback_keep = 'feedback-keep'
+  #prediction_input = 'prediction-input'
+  f_keep = 'f-keep'
+  rb_keep = 'rb-keep'
   hidden_keep = 'hidden-keep'
   lifetime_mask = 'lifetime-mask'
   encoding_mask = 'encoding-mask'
@@ -463,90 +476,129 @@ class SequenceMemoryLayer(SummaryComponent):
       feedback_masked = tf.multiply(feedback_pl, history_4d)
       self._dual.set_op(self.feedback_mask, feedback_masked)
 
-  def _build_decay_and_integrate(self, feedback_old, feedback_now):
-    """Builds graph ops to update feedback structures"""
-    if self._hparams.feedback_decay_rate == 0.0:
-      return feedback_now
+  def get_trace_key(self, prefix):
+    return prefix + '-trace'
 
-    # Integrate feedback over time, exponentially weighted decay.
-    # Do this both for train and test.
+  def get_keep_rate_key(self, prefix):
+    return prefix + '-keep'
 
-    # Additive
-    # feedback_new = (feedback_old * self._hparams.feedback_decay_rate) + feedback_now
+  def _build_trainable_decay(self, prefix, input_4d, input_shape_4d, max_decay_rate):
+    """Build fully connected trainable decay rates. TODO: enable convolutional decay."""
+    name = prefix + '-decay'
+    input_area = np.prod(input_shape_4d[1:])
+    input_1d = tf.reshape(input_4d, shape=[self._hparams.batch_size, input_area])
 
-    # Maximum
-    if self._hparams.feedback_decay_floor > 0.0:
-      logging.info('Feedback decay floor at %f', self._hparams.feedback_decay_floor)
-      decayed_1 = feedback_old * self._hparams.feedback_decay_rate
-      threshold = tf.to_float(decayed_1 > self._hparams.feedback_decay_floor)
-      decayed = decayed_1 * threshold
+    kernel_initializer, bias_initializer = None, None
+    use_bias = True
+    decay_rates = tf.layers.dense(
+        inputs=input_1d, units=input_area,
+        kernel_initializer=kernel_initializer,
+        bias_initializer=bias_initializer,
+        activation=tf.nn.sigmoid, use_bias=use_bias, name=name)
+
+    # Obtain reference to Variable:
+    # with tf.variable_scope(name, reuse=True):
+    #   self._weights_d = tf.get_variable('kernel')
+    #   if use_bias:
+    #     self._bias_d = tf.get_variable('bias')
+
+    # Limit decay rate
+    logging.info('%s decay max at %f', prefix, max_decay_rate)
+    decay_rates = decay_rates * max_decay_rate
+
+    # Reshape to input shape
+    decay_rates = tf.reshape(decay_rates, input_shape_4d)
+    return decay_rates
+
+  def _build_trace(self, prefix, input_4d, input_shape_4d, decay_rate, decay_floor, decay_trainable, max_decay_rate):
+    """Decay and integrate an input to produce a trace over time"""
+    if decay_rate > 0.0:
+      trace_key = self.get_trace_key(prefix)
+      trace_pl = self._dual.add(trace_key, shape=input_shape_4d, default_value=0.0).add_pl(default=True)
+
+      # Trainable or constant decay rate
+      if decay_trainable is True:
+        logging.info('%s decay trainable', prefix)
+        # 4d tensor same shape as input
+        decay_rates = self._build_trainable_decay(prefix, trace_pl, input_shape_4d, max_decay_rate)
+      else:
+        # A scalar
+        logging.info('%s decay @ rate %f', prefix, decay_rate)
+        decay_rates = decay_rate
+
+      # Decay with optional floor
+      if decay_floor > 0.0:
+        logging.info('%s decay floor at %f', prefix, decay_floor)
+        decayed_temp = trace_pl * decay_rates
+        threshold = tf.to_float(decayed_temp > decay_floor)
+        decayed = decayed_temp * threshold
+      else:
+        decayed = trace_pl * decay_rates
+
+      # Include new input
+      trace_op = tf.maximum(decayed, input_4d)
+      self._dual.set_op(trace_key, trace_op)
     else:
-      decayed = feedback_old * self._hparams.feedback_decay_rate
+      logging.info('%s NO trace therefore no decay', prefix)
+      trace_op = input_4d  # no integration... therefore no decay
 
-    feedback_new = tf.maximum(decayed, feedback_now)
+    return trace_op  # Current value
 
-    return feedback_new
+  def _build_norm(self, prefix, input_4d, norm_type, norm_eps):
+    """Normalize/scale the input."""
+    # Define possible norm types
+    norm_type_sum = 'sum'
+    # TODO investigate alternative norm, e.g. frobenius norm:
+    #frobenius_norm = tf.sqrt(tf.reduce_sum(tf.square(input_values_next), axis=[1, 2, 3], keepdims=True))
+    # Layer norm..? There has to be a better norm than this. 
+    # https://mlexplained.com/2018/11/30/an-overview-of-normalization-methods-in-deep-learning/
+    # https://mlexplained.com/2018/01/10/an-intuitive-explanation-of-why-batch-normalization-really-works-normalization-in-deep-learning-part-1/
 
-  def _build_sum_norm(self, input_4d, do_norm, eps=0.00000000001):
-    """Normalize/scale the input using the sum of the inputs."""
-    # Optionally apply a norm to make input constant sum
-    # NOTE: Assuming here it is CORRECT to norm over conv w,h
-    if do_norm is True:
-      sum_input = tf.reduce_sum(input_4d, axis=[1, 2, 3], keepdims=True) + eps
+    # Interpret norm type:
+    if norm_type is None:
+      logging.info('%s NO norm', prefix)
+      return input_4d
+
+    if norm_type == norm_type_sum:
+      logging.info('%s Sum norm', prefix)
+      sum_input = tf.reduce_sum(input_4d, axis=[1, 2, 3], keepdims=True) + norm_eps
       norm_input_4d = tf.divide(input_4d, sum_input)
+      return norm_input_4d
 
-      # TODO investigate alternative norm, e.g. frobenius norm:
-      #frobenius_norm = tf.sqrt(tf.reduce_sum(tf.square(input_values_next), axis=[1, 2, 3], keepdims=True))
-      # Layer norm..? There has to be a better norm than this. 
-      # https://mlexplained.com/2018/11/30/an-overview-of-normalization-methods-in-deep-learning/
-      # https://mlexplained.com/2018/01/10/an-intuitive-explanation-of-why-batch-normalization-really-works-normalization-in-deep-learning-part-1/
-    else:
-      norm_input_4d = input_4d
-    return norm_input_4d
+  def _build_dropout(self, prefix, input_4d, keep_rate):
+    if keep_rate < 1.0:
+      logging.info('%s Dropout @ rate %f', prefix. keep_rate)
+      keep_key = self.get_keep_rate_key(prefix)
+      keep_pl = self._dual.add(keep_key, shape=(), default_value=1.0).add_pl(default=True)
+      dropout_4d = tf.nn.dropout(input_4d, keep_pl)  # Note, a scaling is applied
+      return dropout_4d
+    logging.info('%s NO dropout', prefix)
+    return input_4d
 
+  def _build_input(self, prefix, input_4d,
+                   norm_type, norm_eps, keep_rate,
+                   decay_rate, decay_floor, decay_trainable, max_decay_rate):
+    """Builds the ops to manage an input. The stages are: Norm, Trace, and Dropout."""
 
-  def _build_fb_conditioning(self, feedback_input_4d):
-    """Build feedback conditioning."""
+    # 1. Norm the current sample
+    input_shape_4d = input_4d.get_shape().as_list()
+    norm_4d = self._build_norm(prefix, input_4d, norm_type, norm_eps)
 
-    # Optionally apply a norm to make input constant sum
-    unit_feedback = self._build_sum_norm(feedback_input_4d, self._hparams.feedback_norm)
+    # 2. Build a decaying trace from the normed input
+    trace_4d = self._build_trace(prefix, norm_4d, input_shape_4d, decay_rate, decay_floor, decay_trainable, max_decay_rate)
 
-    # Dropout AFTER norm. There will be a scaling factor inside dropout
-    if self._hparams.feedback_keep_rate < 1.0:
-      feedback_keep_pl = self._dual.add(self.feedback_keep, shape=(), default_value=1.0).add_pl(default=True)
-      unit_feedback_dropout = tf.nn.dropout(unit_feedback, feedback_keep_pl)  # Note, a scaling is applied
-    else:
-      unit_feedback_dropout = unit_feedback
-
-    # Return both values to be used as necessary
-    return unit_feedback, unit_feedback_dropout
-
-  def _build_ff_conditioning(self, f_input):
-    """Build feedforward conditioning."""
-
-    # TODO: could add ff dropout here.
-
-    # TODO: What norm should we do for stacked layers? Is zero special?
-    # Perhaps I should batch-norm.
-
-    # Adjust range - e.g. if range is 0 <= x <= 3, then
-    # if self._hparams.i_scale != 1.0:
-    #   f_input = f_input * self._hparams.i_scale
-
-    # if self._hparams.i_bias != 0.0:
-    #   f_input = f_input + self._hparams.i_bias
-
-    return f_input
+    # 3. Make a sample from the trace with optional dropout
+    sample_4d = self._build_dropout(prefix, trace_4d, keep_rate)
+    return sample_4d
 
   def get_target(self):
-    #target = self._input_values
-    ff_target = self._input_values  # Current input
-    ff_target_shape = self._input_shape
+    target = self._input_values  # Current input
+    target_shape = self._input_shape
     if self._hparams.mode == self.mode_predict_target:
-      ff_target = self._target_values
-      ff_target_shape = self._target_shape
-    ff_target_shape[0] = self._hparams.batch_size
-    return ff_target, ff_target_shape
+      target = self._target_values
+      target_shape = self._target_shape
+    target_shape[0] = self._hparams.batch_size
+    return target, target_shape
 
   def _build(self):
     """Build the autoencoder network"""
@@ -554,11 +606,10 @@ class SequenceMemoryLayer(SummaryComponent):
     num_dendrites = self.get_num_dendrites()
 
     if self.use_freq():
+      num_cells = self._hparams.cols * self._hparams.cells_per_col
       self._dual.add(self.freq_col, shape=[self._hparams.cols], default_value=0.0).add_pl()
-      self._dual.add(self.freq_cell, shape=[self._hparams.cols * self._hparams.cells_per_col],
-                     default_value=0.0).add_pl()
-      self._dual.add(self.usage_cell, shape=[self._hparams.cols * self._hparams.cells_per_col],
-                     default_value=0.0).add_pl()
+      self._dual.add(self.freq_cell, shape=[num_cells], default_value=0.0).add_pl()
+      self._dual.add(self.usage_cell, shape=[num_cells], default_value=0.0).add_pl()
       self._dual.add(self.usage_col, shape=[self._hparams.cols], default_value=0.0).add_pl()
 
     self._dual.add(self.lifetime_mask, shape=[num_dendrites], default_value=1.0).add_pl(dtype=tf.bool)
@@ -568,86 +619,112 @@ class SequenceMemoryLayer(SummaryComponent):
     previous_pl = self._dual.add(self.previous, shape=input_shape_list, default_value=0.0).add_pl()
     self._dual.set_op(self.previous, self._input_values)
 
-    # FF input
-    ff_target, ff_target_shape = self.get_target()
-    # ff_target = self._input_values  # Current input
-    # ff_target_shape = self._input_shape
-    # if self._hparams.mode == self.mode_predict_target:
-    #   ff_target = self._target_values
-    #   ff_target_shape = self._target_shape
-    # ff_target_shape[0] = self._hparams.batch_size
+    # External input and learning target
+    target, target_shape = self.get_target()
 
-    ff_input = previous_pl  # ff_input = x_ff(t-1)
+    f_input = previous_pl  # ff_input = x_ff(t-1)
     if self._hparams.mode == self.mode_encode_input:  # Autoencode
-      ff_input = ff_target  # ff_input = x_ff(t)
-    ff_input = self._build_ff_conditioning(ff_input)
+      f_input = target  # ff_input = x_ff(t)
 
     with tf.name_scope('encoding'):
 
+      # Forward input
+      #f_trace = self._build_ff_conditioning(f_input)
+      f_trace = self._build_input(prefix='f',
+                                  input_4d=f_input,
+                                  norm_type=self._hparams.f_norm_type,
+                                  norm_eps=self._hparams.f_norm_eps,
+                                  keep_rate=self._hparams.f_keep_rate,
+                                  decay_rate=self._hparams.f_decay_rate,
+                                  decay_floor=self._hparams.f_decay_floor,
+                                  decay_trainable=self._hparams.f_decay_trainable,
+                                  max_decay_rate=self._hparams.f_decay_rate_max)
+
       # Recurrent input
-      recurrent_input_shape = SequenceMemoryLayer.get_encoding_shape_4d(input_shape_list, self._hparams)
-      dend_5d_shape = [recurrent_input_shape[0], recurrent_input_shape[1], recurrent_input_shape[2],
-                       self._hparams.cols, self._hparams.cells_per_col]
+      r_input_shape = SequenceMemoryLayer.get_encoding_shape_4d(input_shape_list, self._hparams)
+      r_pl = self._dual.add(self.recurrent, shape=r_input_shape, default_value=0.0).add_pl(default=True)
 
-      recurrent_pl = self._dual.add(self.recurrent, shape=recurrent_input_shape, default_value=0.0).add_pl(default=True)
-      unit_recurrent, unit_recurrent_dropout = self._build_fb_conditioning(recurrent_pl)
-      r_unit_dropout = unit_recurrent_dropout
+      #unit_recurrent, unit_recurrent_dropout = self._build_fb_conditioning(r_pl)
+      #r_trace = unit_recurrent_dropout
+      r_trace = self._build_input(prefix='r',
+                                  input_4d=r_pl,
+                                  norm_type=self._hparams.rb_norm_type,
+                                  norm_eps=self._hparams.rb_norm_eps,
+                                  keep_rate=self._hparams.rb_keep_rate,
+                                  decay_rate=self._hparams.rb_decay_rate,
+                                  decay_floor=self._hparams.rb_decay_floor,
+                                  decay_trainable=self._hparams.rb_decay_trainable,
+                                  max_decay_rate=self._hparams.rb_decay_rate_max)
 
-      # Inhibition (used later, but same shape)
-      self._dual.add(self.inhibition, shape=dend_5d_shape, default_value=0.0).add_pl()
-
-      # FB input
-      b_unit_dropout = None
+      # Backward input
+      b_trace = None
       if self.use_feedback():
         # Note feedback will be integrated in other layer, if that's a thing.
-        feedback_input_shape = self._feedback_shape
-        feedback_pl = self._dual.add(self.feedback, shape=feedback_input_shape, default_value=0.0).add_pl(default=True)
+        b_input_shape = self._feedback_shape
+        b_pl = self._dual.add(self.feedback, shape=b_input_shape, default_value=0.0).add_pl(default=True)
 
         # Interpolate the feedback to the conv w,h of the current layer
-        interpolated_size = [recurrent_input_shape[1], recurrent_input_shape[2]]  # note h,w order
-        feedback_interpolated = tf.image.resize_bilinear(feedback_pl, interpolated_size)
-        _, unit_feedback_dropout = self._build_fb_conditioning(feedback_interpolated)
-        b_unit_dropout = unit_feedback_dropout
+        b_interpolated_size = [r_input_shape[1], r_input_shape[2]]  # note h,w order
+        b_interpolated = tf.image.resize_bilinear(b_pl, b_interpolated_size)
+
+        #_, unit_feedback_dropout = self._build_fb_conditioning(feedback_interpolated)
+        #b_trace = unit_feedback_dropout
+        b_trace = self._build_input(prefix='b',
+                                    input_4d=b_interpolated,
+                                    norm_type=self._hparams.rb_norm_type,
+                                    norm_eps=self._hparams.rb_norm_eps,
+                                    keep_rate=self._hparams.rb_keep_rate,
+                                    decay_rate=self._hparams.rb_decay_rate,
+                                    decay_floor=self._hparams.rb_decay_floor,
+                                    decay_trainable=self._hparams.rb_decay_trainable,
+                                    max_decay_rate=self._hparams.rb_decay_rate_max)
 
       # Encoding of dendrites (weighted sums)
-      f_encoding_cells_5d, r_encoding_cells_5d, b_encoding_cells_5d = self._build_encoding(
-          ff_input, r_unit_dropout, b_unit_dropout)  # y(t) = f x_ff(t-1), y(t-1)
+      # y(t) = f x_ff(t-1), y(t-1)
+      f_encoding_cells_5d, r_encoding_cells_5d, b_encoding_cells_5d = self._build_encoding(f_trace, r_trace, b_trace)
 
       # Sparse masking, and integration of dendrites
+      cells_5d_shape = [r_input_shape[0], r_input_shape[1], r_input_shape[2],
+                        self._hparams.cols, self._hparams.cells_per_col]
+      self._dual.add(self.inhibition, shape=cells_5d_shape, default_value=0.0).add_pl()
       training_filtered_cells_5d, testing_filtered_cells_5d = self._build_filtering(
           f_encoding_cells_5d, r_encoding_cells_5d, b_encoding_cells_5d)  # output y(t) | x_ff(t-1), y(t-1)
 
       # Inference output fork, doesn't accumulate gradients
       output_encoding_cells_5d = tf.stop_gradient(testing_filtered_cells_5d)  # this is the encoding op
-      output_encoding_cells_5d_shape = output_encoding_cells_5d.get_shape().as_list()
-      output_encoding_cells_4d = tf.reshape(output_encoding_cells_5d,
-                                            [-1, output_encoding_cells_5d_shape[1], output_encoding_cells_5d_shape[2],
-                                             output_encoding_cells_5d_shape[3] * output_encoding_cells_5d_shape[4]])
+      output_encoding_cells_4d = self._build_cells_5d_to_cells_4d(output_encoding_cells_5d)
+      # output_encoding_cells_5d_shape = output_encoding_cells_5d.get_shape().as_list()
+      # output_encoding_cells_4d = tf.reshape(output_encoding_cells_5d,
+      #                                       [-1, output_encoding_cells_5d_shape[1], output_encoding_cells_5d_shape[2],
+      #                                        output_encoding_cells_5d_shape[3] * output_encoding_cells_5d_shape[4]])
 
       # NOTE: accumulated recurrent is WITHOUT dropout, so different selections can be made.
-      output_integrated_cells_4d = self._build_decay_and_integrate(unit_recurrent, output_encoding_cells_4d)
-      self._dual.set_op(self.encoding, output_integrated_cells_4d)  # if feedback decay is 0, then == current encoding
+      #output_integrated_cells_4d = self._build_decay_and_integrate(unit_recurrent, output_encoding_cells_4d)
+      #self._dual.set_op(self.encoding, output_integrated_cells_4d)  # if feedback decay is 0, then == current encoding
+      self._dual.set_op(self.encoding, output_encoding_cells_4d)  # Encoding is current spikes only, now. No integration.
 
+      # DEPRECATED
       # Generate inputs and targets for prediction
       # -----------------------------------------------------------------
-      with tf.name_scope('prediction'):
+      # with tf.name_scope('prediction'):
 
-        # Generate what would be the feedback input next time - ie apply the norm
-        if self._hparams.predictor_integrate_input:
-          prediction_encoding = output_integrated_cells_4d  # WITH integration and decay
-        else:
-          prediction_encoding = output_encoding_cells_4d  # WITHOUT integration and decay
+      #   # Generate what would be the feedback input next time - ie apply the norm
+      #   if self._hparams.predictor_integrate_input:
+      #     prediction_encoding = output_integrated_cells_4d  # WITH integration and decay
+      #   else:
+      #     prediction_encoding = output_encoding_cells_4d  # WITHOUT integration and decay
 
-        # Norm prediction input
-        unit_prediction_encoding = self._build_sum_norm(prediction_encoding, self._hparams.predictor_norm_input)
+      #   # Norm prediction input
+      #   unit_prediction_encoding = self._build_sum_norm(prediction_encoding, self._hparams.predictor_norm_input)
 
-        # Input values for prediction (no dropout)
-        prediction_input_values = unit_prediction_encoding  # predict t | y_t = f(t-1, t-2, ... )
-        prediction_input_shape = recurrent_input_shape  # Default
+      #   # Input values for prediction (no dropout)
+      #   prediction_input_values = unit_prediction_encoding  # predict t | y_t = f(t-1, t-2, ... )
+      #   prediction_input_shape = recurrent_input_shape  # Default
 
-        # Set these ops/properties:
-        self._dual.set_op(self.prediction_input, prediction_input_values)
-        self._dual.get(self.prediction_input).set_shape(prediction_input_shape)
+      #   # Set these ops/properties:
+      #   self._dual.set_op(self.prediction_input, prediction_input_values)
+      #   self._dual.get(self.prediction_input).set_shape(prediction_input_shape)
+      # DEPRECATED
 
     # Decode: predict x_ff(t) | y(t)
     # -----------------------------------------------------------------
@@ -661,12 +738,12 @@ class SequenceMemoryLayer(SummaryComponent):
 
       # decode: predict x_t given y_t where
       # y_t = encoding of x_t-1 and y_t-1
-      decoding, decoding_logits = self._build_decoding(ff_target_shape, output_encoding_cols_4d)
+      decoding, decoding_logits = self._build_decoding(target_shape, output_encoding_cols_4d)
       self._dual.set_op(self.decoding, decoding) # This is the thing that's optimized by the memory itself
       self._dual.set_op(self.decoding_logits, decoding_logits) # This is the thing that's optimized by the memory itself
 
       # Debug the per-sample prediction error inherent to the memory.
-      prediction_error = tf.abs(ff_target - decoding)
+      prediction_error = tf.abs(target - decoding)
       #sum_abs_error = tf.reduce_sum(prediction_error, axis=[1, 2, 3])
       sum_abs_error = tf.reduce_sum(prediction_error)
       self._dual.set_op(self.sum_abs_error, sum_abs_error)
@@ -909,20 +986,31 @@ class SequenceMemoryLayer(SummaryComponent):
     return edge_cells_5d_bool
 
   def _build_cols_4d_to_cells_5d(self, cols_4d):
+    """[b, h,w, cols]=4d ---> [b, h,w, cols,cells]=5d"""
     cols_5d = tf.expand_dims(cols_4d, -1)
     cells_5d = tf.tile(cols_5d, [1, 1, 1, 1, self._hparams.cells_per_col])
     return cells_5d
 
   def _build_cols_4d_to_cols_5d(self, cols_4d):
+    """[b, h,w, cols]=4d ---> [b, h,w, cols,1]=5d"""
     cols_5d = tf.expand_dims(cols_4d, -1)
     return cols_5d
 
   def _build_cells_4d_to_cells_5d(self, cells_4d):
+    """[b, h,w, (cols*cells)]=4d ---> [b, h,w, cols,cells]=5d"""
     cells_4d_shape = cells_4d.get_shape().as_list()
     cells_5d_shape = [cells_4d_shape[0], cells_4d_shape[1], cells_4d_shape[2], self._hparams.cols,
                       self._hparams.cells_per_col]
     cells_5d = tf.reshape(cells_4d, cells_5d_shape)
     return cells_5d
+
+  def _build_cells_5d_to_cells_4d(self, cells_5d):
+    """[b, h,w, cols,cells]=5d ---> [b, h,w, (cols*cells)]=4d"""
+    cells_5d_shape = cells_5d.get_shape().as_list()
+    cells_4d = tf.reshape(cells_5d,
+                          [-1, cells_5d_shape[1], cells_5d_shape[2],
+                           cells_5d_shape[3] * cells_5d_shape[4]])
+    return cells_4d
 
   def _build_inhibition(self, i_encoding_cells_5d):
     """Applies inhibition to the specified encoding."""
@@ -1381,23 +1469,45 @@ class SequenceMemoryLayer(SummaryComponent):
           feedback_pl: feedback_values
       })
 
+    # Dendrite traces
+    if self._hparams.f_decay_rate > 0.0:
+      trace_key = self.get_trace_key('f')
+      self._dual.update_feed_dict(feed_dict, [trace_key])
+
+    if self._hparams.rb_decay_rate > 0.0:
+      trace_key = self.get_trace_key('r')
+      self._dual.update_feed_dict(feed_dict, [trace_key])
+
+      if self.use_feedback():
+        trace_key = self.get_trace_key('b')
+        self._dual.update_feed_dict(feed_dict, [trace_key])
+
     # Adjust feedback keep rate by batch type
-    feedback_keep_rate = 1.0  # Encoding
+    f_keep_rate = 1.0
+    rb_keep_rate = 1.0
     hidden_keep_rate = 1.0  # Encoding
     if batch_type == self.training:
-      feedback_keep_rate = self._hparams.feedback_keep_rate  # Training
+      f_keep_rate = self._hparams.f_keep_rate  # Training
+      rb_keep_rate = self._hparams.rb_keep_rate  # Training
       hidden_keep_rate = self._hparams.hidden_keep_rate  # Training
-    logging.debug('Feedback keep rate: %s', str(feedback_keep_rate))
+    logging.debug('Forward keep rate: %s', str(f_keep_rate))
+    logging.debug('Recurrent keep rate: %s', str(rb_keep_rate))
+    logging.debug('Backward keep rate: %s', str(rb_keep_rate))
     logging.debug('Hidden keep rate: %s', str(hidden_keep_rate))
 
     # Placeholder for feedback keep rate
-    if self._hparams.feedback_keep_rate < 1.0:
-      feedback_keep = self._dual.get(self.feedback_keep)
-      feedback_keep_pl = feedback_keep.get_pl()
+    if self._hparams.f_keep_rate < 1.0:
+      f_keep = self._dual.get(self.f_keep)
+      f_keep_pl = f_keep.get_pl()
       feed_dict.update({
-          feedback_keep_pl: feedback_keep_rate
+          f_keep_pl: f_keep_rate
       })
-
+    if self._hparams.rb_keep_rate < 1.0:
+      rb_keep = self._dual.get(self.rb_keep)
+      rb_keep_pl = rb_keep.get_pl()
+      feed_dict.update({
+          rb_keep_pl: rb_keep_rate
+      })
     if self._hparams.hidden_keep_rate < 1.0:
       hidden_keep = self._dual.get(self.hidden_keep)
       hidden_keep_pl = hidden_keep.get_pl()
@@ -1417,6 +1527,19 @@ class SequenceMemoryLayer(SummaryComponent):
     if self.use_freq():
       freq_names = [self.usage_cell, self.usage_col]
       self._dual.add_fetches(fetches, freq_names)
+
+    # Dendrite traces
+    if self._hparams.f_decay_rate > 0.0:
+      trace_key = self.get_trace_key('f')
+      self._dual.add_fetches(fetches, [trace_key])
+
+    if self._hparams.rb_decay_rate > 0.0:
+      trace_key = self.get_trace_key('r')
+      self._dual.add_fetches(fetches, [trace_key])
+
+      if self.use_feedback():
+        trace_key = self.get_trace_key('b')
+        self._dual.add_fetches(fetches, [trace_key])
 
     do_training = tf_do_training(batch_type, self._hparams.training_interval, self._training_batch_count,
                                  name=self.name)
@@ -1440,18 +1563,18 @@ class SequenceMemoryLayer(SummaryComponent):
     ###########################################################################
     # Exact loss calculation over time, for comparison other impl.
     ###########################################################################
-    if batch_type == self.training:
-      samples = 1000
-      if self._loss_mean is None:
-        self._loss_mean = []
-      self._loss_mean.append(self._loss)
-      num_samples = len(self._loss_mean)
-      if (num_samples % 100) == 0:  # Print progress
-        print('RSM loss samples: ', num_samples)
-      if num_samples == samples:  # Print mean loss and reset
-        mean = np.mean(self._loss_mean)
-        self._loss_mean = None
-        print('Mean RSM layer loss ==========> ', mean, ' (N=', num_samples, ')')
+    # if batch_type == self.training:
+    #   samples = 1000
+    #   if self._loss_mean is None:
+    #     self._loss_mean = []
+    #   self._loss_mean.append(self._loss)
+    #   num_samples = len(self._loss_mean)
+    #   if (num_samples % 100) == 0:  # Print progress
+    #     print('RSM loss samples: ', num_samples)
+    #   if num_samples == samples:  # Print mean loss and reset
+    #     mean = np.mean(self._loss_mean)
+    #     self._loss_mean = None
+    #     print('Mean RSM layer loss ==========> ', mean, ' (N=', num_samples, ')')
     ###########################################################################
     # Exact loss calculation over time, for comparison other impl.
     ###########################################################################
@@ -1466,6 +1589,19 @@ class SequenceMemoryLayer(SummaryComponent):
     if self.use_freq():
       freq_names = [self.usage_cell, self.usage_col]
       self._dual.set_fetches(fetched, freq_names)
+
+    # Dendrite traces
+    if self._hparams.f_decay_rate > 0.0:
+      trace_key = self.get_trace_key('f')
+      self._dual.set_fetches(fetched, [trace_key])
+
+    if self._hparams.rb_decay_rate > 0.0:
+      trace_key = self.get_trace_key('r')
+      self._dual.set_fetches(fetched, [trace_key])
+
+      if self.use_feedback():
+        trace_key = self.get_trace_key('b')
+        self._dual.set_fetches(fetched, [trace_key])
 
     # Summaries
     super().set_fetches(fetched, batch_type)
