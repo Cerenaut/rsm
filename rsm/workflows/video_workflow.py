@@ -271,13 +271,13 @@ class VideoWorkflow(ImageSequenceWorkflow):
 
       num_features = np.prod(A.shape[1:])
 
-      mse_gan = ((A - B)**2).mean(axis=None) * num_features
-      mse_rsm = ((A - D)**2).mean(axis=None) * num_features
-      mse_prev = ((A - C)**2).mean(axis=None) * num_features
+      mse_gan = ((A - B)**2).mean(axis=None)
+      mse_rsm = ((A - D)**2).mean(axis=None)
+      mse_prev = ((A - C)**2).mean(axis=None)
 
-      self.all_mse_gan.append(mse_gan)
-      self.all_mse_rsm.append(mse_rsm)
-      self.all_mse_prev.append(mse_prev)
+      self.all_mse_gan.append(mse_gan * num_features)
+      self.all_mse_rsm.append(mse_rsm * num_features)
+      self.all_mse_prev.append(mse_prev * num_features)
 
       avg_mse_gan = np.average(self.all_mse_gan)
       avg_mse_rsm = np.average(self.all_mse_rsm)
@@ -285,8 +285,16 @@ class VideoWorkflow(ImageSequenceWorkflow):
 
       # Write summaries
       summary = tf.Summary()
+      summary.value.add(tag=self._component.name + '/summaries/' + batch_type + '/mse_gan',
+                        simple_value=mse_gan)
+      summary.value.add(tag=self._component.name + '/summaries/' + batch_type + '/mse_rsm',
+                        simple_value=mse_rsm)
+      summary.value.add(tag=self._component.name + '/summaries/' + batch_type + '/mse_prev',
+                        simple_value=mse_prev)
       summary.value.add(tag=self._component.name + '/summaries/' + batch_type + '/avg_mse_gan',
                         simple_value=avg_mse_gan)
+      summary.value.add(tag=self._component.name + '/summaries/' + batch_type + '/std_mse_gan',
+                        simple_value=std_mse_gan)
       summary.value.add(tag=self._component.name + '/summaries/' + batch_type + '/avg_mse_rsm',
                         simple_value=avg_mse_rsm)
       summary.value.add(tag=self._component.name + '/summaries/' + batch_type + '/avg_mse_prev',
