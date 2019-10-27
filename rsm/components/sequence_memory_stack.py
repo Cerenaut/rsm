@@ -115,6 +115,7 @@ class SequenceMemoryStack(SummaryComponent):
         # Memory predictor options
         #predictor_integrate_input=False, deprecated
         predictor_norm_type='sum',
+        predictor_norm_eps=1.0e-11,
 
         # Regularization, 0=Off
         f_l2=[0.0],
@@ -644,6 +645,7 @@ class SequenceMemoryStack(SummaryComponent):
     predictor_hparams.nonlinearity = self._hparams.predictor_nonlinearity
     predictor_hparams.hidden_size = self._hparams.predictor_hidden_size
     predictor_hparams.norm_type = self._hparams.predictor_norm_type
+    predictor_hparams.norm_eps = self._hparams.predictor_norm_eps
     predictor_hparams.keep_rate = self._hparams.predictor_keep_rate
     predictor_hparams.init_sd = self._hparams.predictor_init_sd
     predictor_hparams.l2 = self._hparams.predictor_l2
