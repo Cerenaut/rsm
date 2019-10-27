@@ -1177,7 +1177,7 @@ class SequenceMemoryLayer(SummaryComponent):
     # TOP-1 RANKING (Dend)
     # Reduce over dendrites AND cells to find the best dendrite at each b, h, w, col = 0,1,2,3
     # ---------------------------------------------------------------------------------------------------------------
-    #self._build_tiebreaker_masks(h, w)
+    self._build_tiebreaker_masks(h, w)
     #lifetime_mask_dend_1d = self._dual.get_pl(self.lifetime_mask)
     #training_lifetime_sparsity_dends = self._hparams.lifetime_sparsity_dends
     #testing_lifetime_sparsity_dends = False
@@ -1185,7 +1185,8 @@ class SequenceMemoryLayer(SummaryComponent):
     #                                                    training_lifetime_sparsity_dends, lifetime_mask_dend_1d)
     # testing_mask_cells_5d = self._build_dendrite_mask(h, w, ranking_input_cells_5d, mask_cols_5d,
     #                                                   testing_lifetime_sparsity_dends, lifetime_mask_dend_1d)
-    mask_cells_5d = self._build_cells_mask(h, w, ranking_input_cells_5d, mask_cols_5d)
+    #mask_cells_5d = self._build_cells_mask(h, w, ranking_input_cells_5d, mask_cols_5d)
+    mask_cells_5d = self._build_dendrite_mask(h, w, ranking_input_cells_5d, mask_cols_5d, False, False)
     #testing_mask_cells_5d = training_mask_cells_5d = mask_cells_5d
     testing_mask_cells_5d = training_mask_cells_5d = mask_cols_5d
 
