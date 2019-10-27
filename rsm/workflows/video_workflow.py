@@ -293,8 +293,6 @@ class VideoWorkflow(ImageSequenceWorkflow):
                         simple_value=mse_prev)
       summary.value.add(tag=self._component.name + '/summaries/' + batch_type + '/avg_mse_gan',
                         simple_value=avg_mse_gan)
-      summary.value.add(tag=self._component.name + '/summaries/' + batch_type + '/std_mse_gan',
-                        simple_value=std_mse_gan)
       summary.value.add(tag=self._component.name + '/summaries/' + batch_type + '/avg_mse_rsm',
                         simple_value=avg_mse_rsm)
       summary.value.add(tag=self._component.name + '/summaries/' + batch_type + '/avg_mse_prev',
