@@ -344,6 +344,25 @@ class SequenceMemoryLayer(SummaryComponent):
         self.recurrent_mask: self._dual.get_op(self.recurrent_mask)
     }
 
+    # Dendrite traces
+    def trace_update_feed_dict(self, prefix, feed_dict):
+      trace_key = self.get_trace_key(prefix)
+      self._dual.update_feed_dict(feed_dict, [trace_key])
+
+    def trace_add_fetches(self, prefix, fetches):
+      trace_mask_key = self.get_trace_mask_key(prefix)
+      self._dual.add_fetches(fetches, [trace_mask_key])
+
+    if self._hparams.f_decay_rate > 0.0:
+      trace_update_feed_dict(self, 'f', feed_dict)
+      trace_add_fetches(self, 'f', fetches)
+    if self._hparams.rb_decay_rate > 0.0:
+      trace_update_feed_dict(self, 'r', feed_dict)
+      trace_add_fetches(self, 'r', fetches)
+      if self.use_feedback():
+        trace_update_feed_dict(self, 'b', feed_dict)
+        trace_add_fetches(self, 'b', fetches)
+
     if self.use_feedback():
       feedback = self._dual.get(self.feedback)  # 4d
       feedback_values = feedback.get_values()  # 4d: b, h?, w?, d?
@@ -356,8 +375,10 @@ class SequenceMemoryLayer(SummaryComponent):
     if clear_previous is True:
       fetches[self.previous_mask] = self._dual.get_op(self.previous_mask)
 
+    # Execute the history update on all "history" tensors
     fetched = session.run(fetches, feed_dict=feed_dict)
 
+    # Store the updated values
     inhibition_values_masked = fetched[self.inhibition_mask]
     recurrent_values_masked = fetched[self.recurrent_mask]
 
@@ -371,6 +392,20 @@ class SequenceMemoryLayer(SummaryComponent):
     if clear_previous is True:
       previous_values_masked = fetched[self.previous_mask]
       self._dual.set_values(self.previous, previous_values_masked)
+
+    # Dendrite traces
+    def trace_set_fetches(self, prefix, fetched):
+      trace_key = self.get_trace_key(prefix)
+      trace_mask_key = self.get_trace_mask_key(prefix)
+      trace_values_masked = fetched[self.name][trace_mask_key]
+      self._dual.set_values(trace_key, trace_values_masked)
+
+    if self._hparams.f_decay_rate > 0.0:
+      trace_set_fetches(self, 'f', fetched)
+    if self._hparams.rb_decay_rate > 0.0:
+      trace_set_fetches(self, 'r', fetched)
+      if self.use_feedback():
+        trace_set_fetches(self, 'b', fetched)
 
   def get_num_dendrites(self):
     #num_dendrites = self._hparams.cols * self._hparams.cells_per_col * self._hparams.dends_per_cell
@@ -452,8 +487,15 @@ class SequenceMemoryLayer(SummaryComponent):
 
     self.reset()
 
+  def _build_history_update_trace(self, prefix, history_4d):
+    trace_key = self.get_trace_key(prefix)
+    trace_mask_key = self.get_trace_mask_key(prefix)
+    trace_pl = self._dual.get_pl(trace_key)
+    trace_masked = tf.multiply(trace_pl, history_4d)
+    self._dual.set_op(trace_mask_key, trace_masked)
+
   def _build_history_update(self):
-    """Builds graph ops to update the history tensors given a history mask"""
+    """Builds graph ops to update the history tensors given a history mask. The mask is specified in terms of batch samples."""
 
     history_pl = self._dual.add(self.history, shape=[self._hparams.batch_size], default_value=1.0).add_pl()
     history_4d = tf.reshape(history_pl, [self._hparams.batch_size, 1, 1, 1])
@@ -471,6 +513,16 @@ class SequenceMemoryLayer(SummaryComponent):
     self._dual.set_op(self.inhibition_mask, inhibition_masked)
     self._dual.set_op(self.recurrent_mask, recurrent_masked)
 
+    # Dendrite traces
+    if self._hparams.f_decay_rate > 0.0:
+      self._build_history_update_trace('f', history_4d)
+
+    if self._hparams.rb_decay_rate > 0.0:
+      self._build_history_update_trace('r', history_4d)
+
+      if self.use_feedback():
+        self._build_history_update_trace('b', history_4d)
+
     if self.use_feedback():
       feedback_pl = self._dual.get_pl(self.feedback)
       feedback_masked = tf.multiply(feedback_pl, history_4d)
@@ -478,6 +530,9 @@ class SequenceMemoryLayer(SummaryComponent):
 
   def get_trace_key(self, prefix):
     return prefix + '-trace'
+
+  def get_trace_mask_key(self, prefix):
+    return prefix + '-trace-mask'
 
   def get_keep_rate_key(self, prefix):
     return prefix + '-keep'
