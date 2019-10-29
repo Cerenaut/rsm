@@ -787,9 +787,7 @@ class SequenceMemoryLayer(SummaryComponent):
     # y(t) = f( x_ff(t-1) , y(t-1) OK
     with tf.name_scope('decoding'):
       # TODO Consider removing this bottleneck to allow diff cells in a col to predict different cols.
-      print('training_filtered_cells_5d', training_filtered_cells_5d)
       output_encoding_cols_4d = tf.reduce_max(training_filtered_cells_5d, axis=-1)
-      print('output_encoding_cols_4d', output_encoding_cols_4d)
 
       # decode: predict x_t given y_t where
       # y_t = encoding of x_t-1 and y_t-1
@@ -1242,8 +1240,8 @@ class SequenceMemoryLayer(SummaryComponent):
     #                                                   testing_lifetime_sparsity_dends, lifetime_mask_dend_1d)
     #mask_cells_5d = self._build_cells_mask(h, w, ranking_input_cells_5d, mask_cols_5d)
     mask_cells_5d = self._build_dendrite_mask(h, w, ranking_input_cells_5d, mask_cols_5d, False, False)
-    #testing_mask_cells_5d = training_mask_cells_5d = mask_cells_5d
-    testing_mask_cells_5d = training_mask_cells_5d = mask_cols_5d
+    testing_mask_cells_5d = training_mask_cells_5d = mask_cells_5d
+    #testing_mask_cells_5d = training_mask_cells_5d = mask_cols_5d
 
     # Produce the final filtering with these masks
     training_filtered_cells_5d = self._build_nonlinearities(
