@@ -620,9 +620,12 @@ class SequenceMemoryLayer(SummaryComponent):
       norm_input_4d = tf.divide(input_4d, sum_input)
       return norm_input_4d
 
+    logging.info('%s Not recognized norm, so none. ', prefix)
+    return input_4d
+
   def _build_dropout(self, prefix, input_4d, keep_rate):
     if keep_rate < 1.0:
-      logging.info('%s Dropout @ rate %f', prefix. keep_rate)
+      logging.info('%s Dropout @ rate %f', prefix, keep_rate)
       keep_key = self.get_keep_rate_key(prefix)
       keep_pl = self._dual.add(keep_key, shape=(), default_value=1.0).add_pl(default=True)
       dropout_4d = tf.nn.dropout(input_4d, keep_pl)  # Note, a scaling is applied
@@ -952,7 +955,7 @@ class SequenceMemoryLayer(SummaryComponent):
     # Combine the two masks - lifetime sparse, and top-k-excluding-threshold
     # ---------------------------------------------------------------------------------------------------------------
     if self._hparams.lifetime_sparsity_cols:
-      either_mask_cols_4d = tf.maximum(top_k_mask_cols_4d, top_1_mask_cols_4d)
+      either_mask_cols_4d = tf.maximum(top_k_mask_cols_4d, top_1_mask_cols_4d)  # OR(a, b)
     else:
       either_mask_cols_4d = top_k_mask_cols_4d
 
@@ -1239,7 +1242,7 @@ class SequenceMemoryLayer(SummaryComponent):
     # testing_mask_cells_5d = self._build_dendrite_mask(h, w, ranking_input_cells_5d, mask_cols_5d,
     #                                                   testing_lifetime_sparsity_dends, lifetime_mask_dend_1d)
     #mask_cells_5d = self._build_cells_mask(h, w, ranking_input_cells_5d, mask_cols_5d)
-    mask_cells_5d = self._build_dendrite_mask(h, w, ranking_input_cells_5d, mask_cols_5d, False, False)
+    mask_cells_5d = tf.stop_gradient(self._build_dendrite_mask(h, w, ranking_input_cells_5d, mask_cols_5d, False, False))
     testing_mask_cells_5d = training_mask_cells_5d = mask_cells_5d
     #testing_mask_cells_5d = training_mask_cells_5d = mask_cols_5d
 
@@ -1264,14 +1267,14 @@ class SequenceMemoryLayer(SummaryComponent):
 
     return training_filtered_cells_5d, testing_filtered_cells_5d
 
-  def _build_update_inhibition(self, training_mask_cells_5d, masked_cells_5d):
+  def _build_update_inhibition(self, mask_cells_5d, masked_cells_5d):
     # Update cells' inhibition
     inhibition_cells_5d_pl = self._dual.get_pl(self.inhibition)
     inhibition_cells_5d = inhibition_cells_5d_pl * self._hparams.inhibition_decay # decay old inh
 
     if self._hparams.inhibition_with_mask:
       # Inhibit with mask
-      inhibition_cells_5d = tf.maximum(training_mask_cells_5d, inhibition_cells_5d)
+      inhibition_cells_5d = tf.maximum(mask_cells_5d, inhibition_cells_5d)
     else:
       # Inhibit with value
       inhibition_cells_5d = tf.maximum(masked_cells_5d, inhibition_cells_5d)
@@ -1550,18 +1553,20 @@ class SequenceMemoryLayer(SummaryComponent):
     logging.debug('Hidden keep rate: %s', str(hidden_keep_rate))
 
     # Placeholder for feedback keep rate
+    def update_feed_dict_keep_rate(self, prefix, keep_rate):
+      keep_rate_key = self.get_keep_rate_key(prefix)
+      keep = self._dual.get(keep_rate_key)
+      keep_pl = keep.get_pl()
+      feed_dict.update({
+          keep_pl: keep_rate
+      })
+
     if self._hparams.f_keep_rate < 1.0:
-      f_keep = self._dual.get(self.f_keep)
-      f_keep_pl = f_keep.get_pl()
-      feed_dict.update({
-          f_keep_pl: f_keep_rate
-      })
+      update_feed_dict_keep_rate(self, 'f', f_keep_rate)
     if self._hparams.rb_keep_rate < 1.0:
-      rb_keep = self._dual.get(self.rb_keep)
-      rb_keep_pl = rb_keep.get_pl()
-      feed_dict.update({
-          rb_keep_pl: rb_keep_rate
-      })
+      update_feed_dict_keep_rate(self, 'r', rb_keep_rate)
+      if self.use_feedback():
+        update_feed_dict_keep_rate(self, 'b', rb_keep_rate)
     if self._hparams.hidden_keep_rate < 1.0:
       hidden_keep = self._dual.get(self.hidden_keep)
       hidden_keep_pl = hidden_keep.get_pl()
