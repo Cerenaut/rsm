@@ -1799,6 +1799,8 @@ class SequenceMemoryLayer(SummaryComponent):
       if self.use_boosting():
         boost_cell = self._dual.get_op(self.boost)  # Now a variable
         summaries.append(tf.summary.histogram('boost_cell_hist', boost_cell))
-
+      else:
+        inhibition = self._dual.get_op(self.inhibition)  # Now a variable
+        summaries.append(tf.summary.histogram('inhibition_cell_hist', inhibition))
 
     return summaries
