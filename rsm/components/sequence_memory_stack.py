@@ -25,6 +25,7 @@ import tensorflow as tf
 
 from pagi.utils.tf_utils import tf_build_interpolate_distributions
 from pagi.utils.tf_utils import tf_build_cross_entropy
+from pagi.utils.tf_utils import tf_init_type_none
 
 from pagi.utils.np_utils import np_uniform
 
@@ -122,6 +123,16 @@ class SequenceMemoryStack(SummaryComponent):
         r_l2=[0.0],
         b_l2=[0.0],
         d_l2=[0.0],
+
+        f_init_type=[tf_init_type_none],
+        r_init_type=[tf_init_type_none],
+        b_init_type=[tf_init_type_none],
+        d_init_type=[tf_init_type_none],
+
+        f_bias_init_type=[tf_init_type_none],
+        r_bias_init_type=[tf_init_type_none],
+        b_bias_init_type=[tf_init_type_none],
+        d_bias_init_type=[tf_init_type_none],
 
         f_init_sd=[0.0],
         r_init_sd=[0.0],
@@ -524,6 +535,16 @@ class SequenceMemoryStack(SummaryComponent):
       layer_hparams.r_l2 = self._hparams.r_l2[i]
       layer_hparams.b_l2 = self._hparams.b_l2[i]
       layer_hparams.d_l2 = self._hparams.d_l2[i]
+
+      layer_hparams.f_init_type = self._hparams.f_init_type[i]
+      layer_hparams.r_init_type = self._hparams.r_init_type[i]
+      layer_hparams.b_init_type = self._hparams.b_init_type[i]
+      layer_hparams.d_init_type = self._hparams.d_init_type[i]
+
+      layer_hparams.f_bias_init_type = self._hparams.f_bias_init_type[i]
+      layer_hparams.r_bias_init_type = self._hparams.r_bias_init_type[i]
+      layer_hparams.b_bias_init_type = self._hparams.b_bias_init_type[i]
+      layer_hparams.d_bias_init_type = self._hparams.d_bias_init_type[i]
 
       layer_hparams.f_init_sd = self._hparams.f_init_sd[i]
       layer_hparams.r_init_sd = self._hparams.r_init_sd[i]

@@ -34,6 +34,8 @@ from pagi.utils.tf_utils import tf_build_top_k_mask_4d_op
 from pagi.utils.tf_utils import tf_create_optimizer
 from pagi.utils.tf_utils import tf_do_training
 from pagi.utils.tf_utils import tf_random_mask
+from pagi.utils.tf_utils import tf_get_kernel_initializer
+from pagi.utils.tf_utils import tf_init_type_none
 
 
 class SequenceMemoryLayer(SummaryComponent):
@@ -122,6 +124,16 @@ class SequenceMemoryLayer(SummaryComponent):
         d_l2=0.0,  # Decode
 
         # Initialization
+        f_init_type=tf_init_type_none,
+        r_init_type=tf_init_type_none,
+        b_init_type=tf_init_type_none,
+        d_init_type=tf_init_type_none,
+
+        f_bias_init_type=tf_init_type_none,
+        r_bias_init_type=tf_init_type_none,
+        b_bias_init_type=tf_init_type_none,
+        d_bias_init_type=tf_init_type_none,
+
         f_init_sd=0.03,
         r_init_sd=0.03,
         b_init_sd=0.03,
@@ -842,20 +854,27 @@ class SequenceMemoryLayer(SummaryComponent):
 
     return f_encoding_cells_5d, r_encoding_cells_5d, b_encoding_cells_5d
 
-  def _build_initializers(self, initial_sd, scope):
+  def _build_initializers(self, prefix, w_init_type, b_init_type, initial_sd):
     """Override to change initializer for particular Variables. Scope allows different behaviour for specific Variable."""
-    # Initializer has a mean of 0.0
-    #kernel_initializer = tf.truncated_normal_initializer(stddev=initial_sd)  # Older
-    kernel_initializer = tf.random_normal_initializer(stddev=initial_sd)
-    bias_initializer = kernel_initializer
+    # # Initializer has a mean of 0.0
+    # #kernel_initializer = tf.truncated_normal_initializer(stddev=initial_sd)  # Older
+    # kernel_initializer = tf.random_normal_initializer(stddev=initial_sd)
+    # bias_initializer = kernel_initializer
 
-    # NB: Perhaps should init biases to zero- at least for decoding?
-    # if scope == 'decoding':
-    #   bias_initializer = tf.zeros_initializer
+    # # NB: Perhaps should init biases to zero- at least for decoding?
+    # # if scope == 'decoding':
+    # #   bias_initializer = tf.zeros_initializer
+    logging.info('Variable prefix "%s" has W init type: "%s" and b init type: "%s" (sd=%f)', prefix, w_init_type, b_init_type, initial_sd)
 
-    return kernel_initializer, bias_initializer
+    w_init = tf_get_kernel_initializer(init_type=w_init_type, initial_sd=initial_sd)
+    if b_init_type is not None:
+      b_init = tf_get_kernel_initializer(init_type=b_init_type, initial_sd=initial_sd)
+    else:
+      b_init = None
+    return w_init, b_init
 
   def _build_conv_encoding(self, input_shape, input_tensor, field_stride, field_height, field_width, output_depth,
+                           w_init_type, b_init_type, 
                            add_bias, initial_sd, scope):
     """Build encoding ops for the forward path."""
     input_depth = input_shape[3]
@@ -869,7 +888,7 @@ class SequenceMemoryLayer(SummaryComponent):
 
     with tf.variable_scope(scope, reuse=tf.AUTO_REUSE, auxiliary_name_scope=False):
 
-      kernel_initializer, bias_initializer = self._build_initializers(initial_sd, scope)
+      kernel_initializer, bias_initializer = self._build_initializers(scope, w_init_type, b_init_type, initial_sd)
       weights = tf.get_variable(shape=conv_variable_shape,
                                 initializer=kernel_initializer, name='kernel')
 
@@ -885,43 +904,52 @@ class SequenceMemoryLayer(SummaryComponent):
 
   def _build_forward_encoding(self, input_shape, input_tensor):
     """Build encoding ops for the forward path."""
+    scope = 'forward'
     output_depth = self._hparams.cols
     field_stride = self._hparams.filters_field_stride
     field_height = self._hparams.filters_field_height
     field_width = self._hparams.filters_field_width
     add_bias = self._hparams.f_bias
+    w_init_type = self._hparams.f_init_type
+    b_init_type = self._hparams.f_bias_init_type
     initial_sd = self._hparams.f_init_sd  #0.03
-    scope = 'forward'
     convolved, self._weights_f, self._bias_f = self._build_conv_encoding(input_shape, input_tensor, field_stride,
                                                                          field_height, field_width, output_depth,
+                                                                         w_init_type, b_init_type,
                                                                          add_bias, initial_sd, scope)
     return convolved
 
   def _build_recurrent_encoding(self, input_shape, input_tensor):
     """Build encoding ops for the forward path."""
+    scope = 'recurrent'
     output_depth = self._hparams.cols * self._hparams.cells_per_col
     field_stride = 1  # i.e. feed to itself
     field_height = 1  # i.e. same position
     field_width = 1  # i.e. same position
     add_bias = self._hparams.r_bias
+    w_init_type = self._hparams.r_init_type
+    b_init_type = self._hparams.r_bias_init_type
     initial_sd = self._hparams.r_init_sd  # Not previously defined
-    scope = 'recurrent'
     convolved, self._weights_r, self._bias_r = self._build_conv_encoding(input_shape, input_tensor, field_stride,
                                                                          field_height, field_width, output_depth,
+                                                                         w_init_type, b_init_type,
                                                                          add_bias, initial_sd, scope)
     return convolved
 
   def _build_feedback_encoding(self, input_shape, input_tensor):
     """Build encoding ops for the forward path."""
+    scope = 'feedback'
     output_depth = self._hparams.cols * self._hparams.cells_per_col
     field_stride = 1  # i.e. feed to itself
     field_height = 1  # i.e. same position
     field_width = 1  # i.e. same position
     add_bias = self._hparams.b_bias
+    w_init_type = self._hparams.b_init_type
+    b_init_type = self._hparams.b_bias_init_type
     initial_sd = self._hparams.b_init_sd  # Not previously defined
-    scope = 'feedback'
     convolved, self._weights_b, self._bias_b = self._build_conv_encoding(input_shape, input_tensor, field_stride,
                                                                          field_height, field_width, output_depth,
+                                                                         w_init_type, b_init_type,
                                                                          add_bias, initial_sd, scope)
     return convolved
 
@@ -1339,7 +1367,9 @@ class SequenceMemoryLayer(SummaryComponent):
     hidden_area = np.prod(hidden_tensor.get_shape()[1:])
     hidden_reshape = tf.reshape(hidden_tensor, shape=[self._hparams.batch_size, hidden_area])
 
-    kernel_initializer, bias_initializer = self._build_initializers(self._hparams.d_init_sd, scope=name)
+    w_init_type = self._hparams.d_init_type
+    b_init_type = self._hparams.d_bias_init_type
+    kernel_initializer, bias_initializer = self._build_initializers(name, w_init_type, b_init_type, self._hparams.d_init_sd)
 
     # Make the decoding layer
     # Note: We use our own nonlinearity, elsewhere.
@@ -1372,7 +1402,9 @@ class SequenceMemoryLayer(SummaryComponent):
     deconv_shape = target_shape
     deconv_shape[0] = self._hparams.batch_size
 
-    kernel_initializer, bias_initializer = self._build_initializers(self._hparams.d_init_sd, scope=name)
+    w_init_type = self._hparams.d_init_type
+    b_init_type = self._hparams.d_bias_init_type
+    kernel_initializer, bias_initializer = self._build_initializers(name, w_init_type, b_init_type, self._hparams.d_init_sd)
 
     with tf.variable_scope(name):
       self._weights_d = tf.get_variable(
