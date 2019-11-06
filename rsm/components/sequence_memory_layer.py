@@ -604,7 +604,6 @@ class SequenceMemoryLayer(SummaryComponent):
 
       # Include new input
       trace_op = tf.maximum(decayed, input_4d)
-      self._dual.set_op(trace_key, trace_op)
     else:
       logging.info('%s NO trace therefore no decay', prefix)
       trace_op = input_4d  # no integration... therefore no decay
@@ -650,15 +649,20 @@ class SequenceMemoryLayer(SummaryComponent):
                    decay_rate, decay_floor, decay_trainable, max_decay_rate):
     """Builds the ops to manage an input. The stages are: Norm, Trace, and Dropout."""
 
-    # 1. Norm the current sample
     input_shape_4d = input_4d.get_shape().as_list()
-    norm_4d = self._build_norm(prefix, input_4d, norm_type, norm_eps)
 
     # 2. Build a decaying trace from the normed input
-    trace_4d = self._build_trace(prefix, norm_4d, input_shape_4d, decay_rate, decay_floor, decay_trainable, max_decay_rate)
+    trace_4d = self._build_trace(prefix, input_4d, input_shape_4d, decay_rate, decay_floor, decay_trainable, max_decay_rate)
 
-    # 3. Make a sample from the trace with optional dropout
-    sample_4d = self._build_dropout(prefix, trace_4d, keep_rate)
+    # 2. Norm the integrated trace
+    norm_4d = self._build_norm(prefix, trace_4d, norm_type, norm_eps)
+
+    # 3. Store the normed trace:
+    trace_key = self.get_trace_key(prefix)
+    self._dual.set_op(trace_key, norm_4d)
+
+    # 4. Make a sample from the normed trace with optional dropout
+    sample_4d = self._build_dropout(prefix, norm_4d, keep_rate)
     return sample_4d
 
   def get_target(self):
@@ -753,15 +757,17 @@ class SequenceMemoryLayer(SummaryComponent):
       # y(t) = f x_ff(t-1), y(t-1)
       f_encoding_cells_5d, r_encoding_cells_5d, b_encoding_cells_5d = self._build_encoding(f_trace, r_trace, b_trace)
 
+      # # Inhibition placeholder
+      # cells_5d_shape = [r_input_shape[0], r_input_shape[1], r_input_shape[2],
+      #                   self._hparams.cols, self._hparams.cells_per_col]
+      # self._dual.add(self.inhibition, shape=cells_5d_shape, default_value=0.0).add_pl()
+
       # Sparse masking, and integration of dendrites
-      cells_5d_shape = [r_input_shape[0], r_input_shape[1], r_input_shape[2],
-                        self._hparams.cols, self._hparams.cells_per_col]
-      self._dual.add(self.inhibition, shape=cells_5d_shape, default_value=0.0).add_pl()
-      training_filtered_cells_5d, testing_filtered_cells_5d = self._build_filtering(
+      filtered_cells_5d = self._build_filtering(
           f_encoding_cells_5d, r_encoding_cells_5d, b_encoding_cells_5d)  # output y(t) | x_ff(t-1), y(t-1)
 
       # Inference output fork, doesn't accumulate gradients
-      output_encoding_cells_5d = tf.stop_gradient(testing_filtered_cells_5d)  # this is the encoding op
+      output_encoding_cells_5d = tf.stop_gradient(filtered_cells_5d)  # this is the encoding op
       output_encoding_cells_4d = self._build_cells_5d_to_cells_4d(output_encoding_cells_5d)
       # output_encoding_cells_5d_shape = output_encoding_cells_5d.get_shape().as_list()
       # output_encoding_cells_4d = tf.reshape(output_encoding_cells_5d,
@@ -802,7 +808,7 @@ class SequenceMemoryLayer(SummaryComponent):
     # y(t) = f( x_ff(t-1) , y(t-1) OK
     with tf.name_scope('decoding'):
       # TODO Consider removing this bottleneck to allow diff cells in a col to predict different cols.
-      output_encoding_cols_4d = tf.reduce_max(training_filtered_cells_5d, axis=-1)
+      output_encoding_cols_4d = tf.reduce_max(filtered_cells_5d, axis=-1)
 
       # decode: predict x_t given y_t where
       # y_t = encoding of x_t-1 and y_t-1
@@ -827,8 +833,8 @@ class SequenceMemoryLayer(SummaryComponent):
     f_encoding_cells_5d = None
     with tf.name_scope('forward'):
       f_encoding_cols_4d = self._build_forward_encoding(self._input_shape, f_input)  #, self._hparams.cols)
-      f_encoding_cells_5d = self._build_cols_4d_to_cells_5d(f_encoding_cols_4d)
-      #f_encoding_cells_5d = self._build_cols_4d_to_cols_5d(f_encoding_cols_4d)
+      f_encoding_cells_5d = self._build_cols_4d_to_cells_5d(f_encoding_cols_4d)  # Old way - tiled
+      #f_encoding_cells_5d = self._build_cols_4d_to_cols_5d(f_encoding_cols_4d)  # New way - broadcast
       self._dual.set_op(self.encoding_f, f_encoding_cells_5d)
 
     num_cells = self.get_num_cells()
@@ -965,24 +971,24 @@ class SequenceMemoryLayer(SummaryComponent):
     top_k_mask_cols_4d = tf_build_top_k_mask_4d_op(ranking_input_cols_4d, k, batch_size, h, w, hidden_size)
 
     # ---------------------------------------------------------------------------------------------------------------
-    # TOP-1 over cells - lifetime sparsity [in winning Cols only.]
-    # ---------------------------------------------------------------------------------------------------------------
-    # At each batch, h, w, and col, find the top-1 cell.
-    # Don't reduce over cells - dendrite is only valid for its associated cell.
-    top_1_input_cols_4d = tf.reduce_max(ranking_input_cols_4d, axis=[0, 1, 2], keepdims=True)
-    top_1_mask_bool_cols_4d = tf.greater_equal(ranking_input_cols_4d, top_1_input_cols_4d)
-    top_1_mask_cols_4d = tf.to_float(top_1_mask_bool_cols_4d)
-
-    # ---------------------------------------------------------------------------------------------------------------
-    # Exclude naturally winning cols from the lifetime sparsity mask.
-    # ---------------------------------------------------------------------------------------------------------------
-    top_k_inv_cols_4d = 1.0 - tf.reduce_max(top_k_mask_cols_4d, axis=[0, 1, 2], keepdims=True)
-    top_1_mask_cols_4d = tf.multiply(top_1_mask_cols_4d, top_k_inv_cols_4d) # removes lifetime bits from winning cols
-
-    # ---------------------------------------------------------------------------------------------------------------
     # Combine the two masks - lifetime sparse, and top-k-excluding-threshold
     # ---------------------------------------------------------------------------------------------------------------
     if self._hparams.lifetime_sparsity_cols:
+      # ---------------------------------------------------------------------------------------------------------------
+      # TOP-1 over cells - lifetime sparsity [in winning Cols only.]
+      # ---------------------------------------------------------------------------------------------------------------
+      # At each batch, h, w, and col, find the top-1 cell.
+      # Don't reduce over cells - dendrite is only valid for its associated cell.
+      top_1_input_cols_4d = tf.reduce_max(ranking_input_cols_4d, axis=[0, 1, 2], keepdims=True)
+      top_1_mask_bool_cols_4d = tf.greater_equal(ranking_input_cols_4d, top_1_input_cols_4d)
+      top_1_mask_cols_4d = tf.to_float(top_1_mask_bool_cols_4d)
+
+      # ---------------------------------------------------------------------------------------------------------------
+      # Exclude naturally winning cols from the lifetime sparsity mask.
+      # ---------------------------------------------------------------------------------------------------------------
+      top_k_inv_cols_4d = 1.0 - tf.reduce_max(top_k_mask_cols_4d, axis=[0, 1, 2], keepdims=True)
+      top_1_mask_cols_4d = tf.multiply(top_1_mask_cols_4d, top_k_inv_cols_4d) # removes lifetime bits from winning cols
+
       either_mask_cols_4d = tf.maximum(top_k_mask_cols_4d, top_1_mask_cols_4d)  # OR(a, b)
     else:
       either_mask_cols_4d = top_k_mask_cols_4d
@@ -1016,8 +1022,8 @@ class SequenceMemoryLayer(SummaryComponent):
     # Find best cell in each col
     # 0 1 2 3   4
     # b,h,w,col,cell
-    max_cells_5d = tf.reduce_max(ranking_input_cells_5d, axis=[4], keepdims=True) # 1 if bit is best in the col
-    best_cells_5d_bool = tf.greater_equal(ranking_input_cells_5d, max_cells_5d)
+    max_cells_5d = tf.reduce_max(ranking_input_cells_5d, axis=[4], keepdims=True)
+    best_cells_5d_bool = tf.greater_equal(ranking_input_cells_5d, max_cells_5d)  # =1 if bit is best in the col
     best_cells_5d = tf.to_float(best_cells_5d_bool)
     mask_cells_5d = mask_cols_5d * best_cells_5d  # best-in-col AND topk-cols
     return mask_cells_5d
@@ -1227,9 +1233,16 @@ class SequenceMemoryLayer(SummaryComponent):
   def _build_filtering(self, f_encoding_cells_5d, r_encoding_cells_5d, b_encoding_cells_5d):
     """Build filtering/masking for specified encoding."""
 
-    shape_cells_5d = f_encoding_cells_5d.get_shape().as_list()
-    h = shape_cells_5d[1]
-    w = shape_cells_5d[2]
+    # ---------------------------------------------------------------------------------------------------------------
+    # Inhibition placeholder
+    # ---------------------------------------------------------------------------------------------------------------
+    cells_5d_shape = r_encoding_cells_5d.get_shape().as_list()
+    h = cells_5d_shape[1]
+    w = cells_5d_shape[2]
+
+    #cells_5d_shape = [r_input_shape[0], r_input_shape[1], r_input_shape[2],
+    #                  self._hparams.cols, self._hparams.cells_per_col]
+    self._dual.add(self.inhibition, shape=cells_5d_shape, default_value=0.0).add_pl()
 
     # ---------------------------------------------------------------------------------------------------------------
     # INTEGRATE DENDRITES
@@ -1269,19 +1282,20 @@ class SequenceMemoryLayer(SummaryComponent):
     #                                                    training_lifetime_sparsity_dends, lifetime_mask_dend_1d)
     # testing_mask_cells_5d = self._build_dendrite_mask(h, w, ranking_input_cells_5d, mask_cols_5d,
     #                                                   testing_lifetime_sparsity_dends, lifetime_mask_dend_1d)
-    #mask_cells_5d = self._build_cells_mask(h, w, ranking_input_cells_5d, mask_cols_5d)
-    mask_cells_5d = tf.stop_gradient(self._build_dendrite_mask(h, w, ranking_input_cells_5d, mask_cols_5d, False, False))
-    testing_mask_cells_5d = training_mask_cells_5d = mask_cells_5d
+    mask_cells_5d = tf.stop_gradient(self._build_cells_mask(h, w, ranking_input_cells_5d, mask_cols_5d))
+    #mask_cells_5d = tf.stop_gradient(self._build_dendrite_mask(h, w, ranking_input_cells_5d, mask_cols_5d, False, False))
+    #testing_mask_cells_5d = training_mask_cells_5d = mask_cells_5d
     #testing_mask_cells_5d = training_mask_cells_5d = mask_cols_5d
+    self._dual.set_op(self.encoding_mask, mask_cells_5d)
 
     # Produce the final filtering with these masks
-    training_filtered_cells_5d = self._build_nonlinearities(
-        f_encoding_cells_5d, r_encoding_cells_5d, b_encoding_cells_5d, training_mask_cells_5d)
+    filtered_cells_5d = self._build_nonlinearities(
+        f_encoding_cells_5d, r_encoding_cells_5d, b_encoding_cells_5d, mask_cells_5d)
 
-    testing_filtered_cells_5d = training_filtered_cells_5d
+    #testing_filtered_cells_5d = training_filtered_cells_5d
 
     #if not self.use_boosting():
-    self._build_update_inhibition(training_mask_cells_5d, training_filtered_cells_5d)
+    self._build_update_inhibition(mask_cells_5d, filtered_cells_5d)
     #self._build_update_boosting(training_mask_cells_5d)
 
     # # Update cells' inhibition
@@ -1291,9 +1305,9 @@ class SequenceMemoryLayer(SummaryComponent):
 
     # Update usage (test mask doesnt include lifetime bits)
     if self.use_freq():
-      self._build_update_usage(testing_mask_cells_5d)
+      self._build_update_usage(mask_cells_5d)
 
-    return training_filtered_cells_5d, testing_filtered_cells_5d
+    return filtered_cells_5d
 
   def _build_update_inhibition(self, mask_cells_5d, masked_cells_5d):
     # Update cells' inhibition
@@ -1337,8 +1351,8 @@ class SequenceMemoryLayer(SummaryComponent):
   def _build_nonlinearities(self, f_encoding_cells_5d, r_encoding_cells_5d, b_encoding_cells_5d, mask_cells_5d):
     """Mask the encodings, sum them, and apply nonlinearity. Don't backprop into the mask."""
 
-    mask_cells_5d_sg = tf.stop_gradient(mask_cells_5d)
-    self._dual.set_op(self.encoding_mask, mask_cells_5d_sg)
+    #mask_cells_5d_sg = tf.stop_gradient(mask_cells_5d)
+    #self._dual.set_op(self.encoding_mask, mask_cells_5d_sg)
 
     # Apply masks
     #f_masked_cells_5d = f_encoding_cells_5d * mask_cells_5d
@@ -1353,7 +1367,7 @@ class SequenceMemoryLayer(SummaryComponent):
       hidden_sum_cells_5d = hidden_sum_cells_5d + b_encoding_cells_5d
 
     # Nonlinearity (1)
-    masked_sum_cells_5d = hidden_sum_cells_5d * mask_cells_5d_sg
+    masked_sum_cells_5d = hidden_sum_cells_5d * mask_cells_5d
 
     # Nonlinearity (2)
     hidden_transfer_cells_5d, _ = activation_fn(masked_sum_cells_5d, self._hparams.hidden_nonlinearity)
