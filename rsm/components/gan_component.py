@@ -123,7 +123,7 @@ class GANComponent(SummaryComponent):
         if self.hparams.autoencoder == 'both':
           logging.info('Using autoencoder mode in %s.', self.name)
 
-          decoder_nonlinearity = 'relu'
+          decoder_nonlinearity = 'leaky_relu'
 
           bottleneck = conv_block(-1, fn=tf.layers.Conv2D, nonlinearity=decoder_nonlinearity)
           layers.append(bottleneck)
@@ -256,14 +256,19 @@ class GANComponent(SummaryComponent):
 
     def loss(self, real_logits, fake_logits):
       """Build the discriminator loss."""
+      smoothing_factor = 0.1
+
+      real_labels = tf.ones_like(real_logits) * (1 - smoothing_factor)
+      fake_labels = tf.zeros_like(fake_logits)
+
       real_loss = tf.reduce_mean(
-          tf.nn.sigmoid_cross_entropy_with_logits(labels=tf.ones_like(real_logits),
+          tf.nn.sigmoid_cross_entropy_with_logits(labels=real_labels,
                                                   logits=real_logits,
                                                   name='real_loss')
       )
 
       fake_loss = tf.reduce_mean(
-          tf.nn.sigmoid_cross_entropy_with_logits(labels=tf.zeros_like(fake_logits),
+          tf.nn.sigmoid_cross_entropy_with_logits(labels=fake_labels,
                                                   logits=fake_logits,
                                                   name='fake_loss')
       )
