@@ -57,6 +57,7 @@ class SequenceMemoryLayer(SummaryComponent):
         # General options
         training_interval=[0, -1],  # [0,-1] means forever
         mode='predict-input',
+        input_norm_first=False,
         hidden_nonlinearity='tanh', # used for hidden layer only
         decode_nonlinearity='none', # Used for decoding
         decode_mode='fc',
@@ -650,18 +651,27 @@ class SequenceMemoryLayer(SummaryComponent):
     """Builds the ops to manage an input. The stages are: Norm, Trace, and Dropout."""
     input_shape_4d = input_4d.get_shape().as_list()
 
-    # 2. Build a decaying trace from the normed input
-    trace_4d = self._build_trace(prefix, input_4d, input_shape_4d, decay_rate, decay_floor, decay_trainable, max_decay_rate)
+    if self._hparams.input_norm_first:
+      # 1. Norm the integrated trace
+      norm_4d = self._build_norm(prefix, input_4d, norm_type, norm_eps)
 
-    # 2. Norm the integrated trace
-    norm_4d = self._build_norm(prefix, trace_4d, norm_type, norm_eps)
+      # 2. Build a decaying trace from the normed input
+      trace_4d = self._build_trace(prefix, norm_4d, input_shape_4d, decay_rate, decay_floor, decay_trainable, max_decay_rate)
+      final_4d = trace_4d
+    else:
+      # 1. Build a decaying trace from input
+      trace_4d = self._build_trace(prefix, input_4d, input_shape_4d, decay_rate, decay_floor, decay_trainable, max_decay_rate)
 
-    # 3. Store the normed trace:
+      # 2. Norm the integrated trace
+      norm_4d = self._build_norm(prefix, trace_4d, norm_type, norm_eps)
+      final_4d = norm_4d
+
+    # 3. Store the updated trace:
     trace_key = self.get_trace_key(prefix)
-    self._dual.set_op(trace_key, norm_4d)
+    self._dual.set_op(trace_key, final_4d)
 
     # 4. Make a sample from the normed trace with optional dropout
-    sample_4d = self._build_dropout(prefix, norm_4d, keep_rate)
+    sample_4d = self._build_dropout(prefix, final_4d, keep_rate)
 
     summarize_traces = False
     if summarize_traces:

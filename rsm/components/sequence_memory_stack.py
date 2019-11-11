@@ -149,6 +149,7 @@ class SequenceMemoryStack(SummaryComponent):
         freq_learning_rate=0.1,
         freq_min=0.05, # used by lifetime sparsity mask
 
+        input_norm_first=False,  # Controls order of input ops in memory
         hidden_nonlinearity='tanh', # used for hidden layer only
         decode_nonlinearity=['none'], # Used for decoding
         decode_mode=['fc'],
@@ -497,6 +498,7 @@ class SequenceMemoryStack(SummaryComponent):
       layer_hparams.summarize_freq = self._hparams.memory_summarize_freq
 
       layer_hparams.training_interval = self._hparams.memory_training_interval
+      layer_hparams.input_norm_first = self._hparams.input_norm_first
       layer_hparams.hidden_nonlinearity = self._hparams.hidden_nonlinearity
 
       layer_hparams.predictor_use_input = False
