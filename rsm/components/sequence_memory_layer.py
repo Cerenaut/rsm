@@ -648,7 +648,6 @@ class SequenceMemoryLayer(SummaryComponent):
                    norm_type, norm_eps, keep_rate,
                    decay_rate, decay_floor, decay_trainable, max_decay_rate):
     """Builds the ops to manage an input. The stages are: Norm, Trace, and Dropout."""
-
     input_shape_4d = input_4d.get_shape().as_list()
 
     # 2. Build a decaying trace from the normed input
@@ -663,6 +662,13 @@ class SequenceMemoryLayer(SummaryComponent):
 
     # 4. Make a sample from the normed trace with optional dropout
     sample_4d = self._build_dropout(prefix, norm_4d, keep_rate)
+
+    summarize_traces = False
+    if summarize_traces:
+      self._dual.set_op(prefix+'-in', input_4d)
+      self._dual.set_op(prefix+'-int', trace_4d)
+      self._dual.set_op(prefix+'-norm', norm_4d)
+      self._dual.set_op(prefix+'-dropo', sample_4d)
     return sample_4d
 
   def get_target(self):
@@ -1531,13 +1537,14 @@ class SequenceMemoryLayer(SummaryComponent):
   def _build_loss_fn(self, target, output, output_logits=None):
     """Build the loss function with specified type: mse, sigmoid-ce, softmax-ce."""
     if self._hparams.loss_type == 'mse':
-      # Due to concern about the way the reduction is done in N-dimensional tensors, explicitly make it 1-d.
-      image_shape = target.shape.as_list()
-      image_size = np.prod(image_shape[1:])
-      vector_shape = [image_shape[0], image_size]
-      target_vector = tf.reshape(target, vector_shape)      
-      output_vector = tf.reshape(output, vector_shape)      
-      return tf.losses.mean_squared_error(target_vector, output_vector)
+      return tf.losses.mean_squared_error(target, output)
+      # # Due to concern about the way the reduction is done in N-dimensional tensors, explicitly make it 1-d.
+      # image_shape = target.shape.as_list()
+      # image_size = np.prod(image_shape[1:])
+      # vector_shape = [image_shape[0], image_size]
+      # target_vector = tf.reshape(target, vector_shape)
+      # output_vector = tf.reshape(output, vector_shape)
+      # return tf.losses.mean_squared_error(target_vector, output_vector)
       #return tf.losses.mean_squared_error(target, output, reduction=Reduction.SUM_BY_NONZERO_WEIGHTS)
       #return tf.losses.mean_squared_error(target, output, reduction=tf.losses.Reduction.MEAN)
 
@@ -1720,6 +1727,7 @@ class SequenceMemoryLayer(SummaryComponent):
   def _build_summaries(self, batch_type, max_outputs=3):
     """Build the summaries for TensorBoard."""
 
+    #max_outputs=1
     logging.debug('layer: %s, batch type: %s', self.name, batch_type)
 
     summaries = []
@@ -1799,11 +1807,14 @@ class SequenceMemoryLayer(SummaryComponent):
     if self._hparams.summarize_weights:
       w_f = self._weights_f
       w_r = self._weights_r
+      w_d = self._weights_d
       summaries.append(tf.summary.scalar('Wf', tf.reduce_sum(tf.abs(w_f))))
-      summaries.append(tf.summary.scalar('Wr', tf.reduce_sum(tf.abs(w_f))))
+      summaries.append(tf.summary.scalar('Wr', tf.reduce_sum(tf.abs(w_r))))
+      summaries.append(tf.summary.scalar('Wd', tf.reduce_sum(tf.abs(w_d))))
 
       summaries.append(tf.summary.histogram('w_f_hist', w_f))
       summaries.append(tf.summary.histogram('w_r_hist', w_r))
+      summaries.append(tf.summary.histogram('w_d_hist', w_d))
 
       # weight histograms
       wf_per_column = tf.reduce_sum(tf.abs(w_f), [0, 1, 2])  # over the columns (conv filters)
@@ -1823,6 +1834,26 @@ class SequenceMemoryLayer(SummaryComponent):
       wb_cells_reshaped = tf.reshape(wb_cells, wb_cells_summary_shape)
       wb_cells_summary_op = tf.summary.image('wr_cells', wb_cells_reshaped, max_outputs=max_outputs)
       summaries.append(wb_cells_summary_op)
+
+    # Dendrite traces
+    summarize_traces = False
+    if summarize_traces:
+      def build_trace_image_summary(self, key, summaries, summary_shape):
+        op = self._dual.get(key).get_op()
+        #summary_shape = [300,60,80,1]
+        op_reshape = tf.reshape(op, summary_shape)
+        summary_op = tf.summary.image(prefix+suffix, op_reshape)
+        summaries.append(summary_op)
+
+      prefix = 'r'
+      suffix = '-in'
+      build_trace_image_summary(self, prefix+suffix, summaries, hidden_shape_4d)
+      suffix = '-int'
+      build_trace_image_summary(self, prefix+suffix, summaries, hidden_shape_4d)
+      suffix = '-norm'
+      build_trace_image_summary(self, prefix+suffix, summaries, hidden_shape_4d)
+      suffix = '-dropo'
+      build_trace_image_summary(self, prefix+suffix, summaries, hidden_shape_4d)
 
     # Utilization of resources
     if self._hparams.summarize_freq:

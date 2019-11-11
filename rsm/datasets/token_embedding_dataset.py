@@ -106,9 +106,9 @@ class TokenEmbeddingDataset(Dataset):  # pylint: disable=W0223
     """Get a list of words from the corpus."""
     return Embedding.tokenize_files([text_file], token_delimiter, eos)
 
-  def create_embedding(self, token_file, tokens_values_file, token_delimiter):
+  def create_embedding(self, token_file, tokens_values_file, token_delimiter, eos_token):
     e = Embedding()
-    e.read_tokens(token_file, token_delimiter)
+    e.read_tokens(token_file, token_delimiter)  # Must be none to not append
     e.read_tokens_values(tokens_values_file)
     #e.check()
     return e
@@ -138,7 +138,7 @@ class TokenEmbeddingDataset(Dataset):  # pylint: disable=W0223
     #self._random_offsets = random_offsets
 
     # Create the embedding
-    self._embedding = self.create_embedding(token_file, embedding_file, token_delimiter)
+    self._embedding = self.create_embedding(token_file, embedding_file, token_delimiter, self._eos)
     num_tokens = self._embedding.get_num_tokens()
     token_value_shape = self._embedding.get_token_value_shape()
     logging.info('Embedding has %s keys and %s values.', str(num_tokens), str(token_value_shape))
