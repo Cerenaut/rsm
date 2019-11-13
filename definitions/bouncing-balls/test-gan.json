@@ -5,7 +5,7 @@
     "component": "rsm.components.composite_rsm_stack",
     "batches": 29000,
 
-    "checkpoint": "/home/incubator/agief-remote-run/rsm/run/summaries_20191017-155103/model.ckpt-29000",
+    "checkpoint": "/home/incubator/agief-remote-run/rsm/run/summaries_20191021-102848/model.ckpt-29000",
 
 
 
@@ -38,7 +38,7 @@
       "rsm_stack_freq_min": 0.01,
       "rsm_stack_freq_update_interval": -1,
       "rsm_stack_freq_learning_rate": 0.1,
-      "rsm_stack_inhibition_decay": [0.8, 0.8],
+      "rsm_stack_inhibition_decay": [0.0, 0.0],
       "rsm_stack_feedback_decay_rate": [0.0, 0.0],
       "rsm_stack_feedback_keep_rate": [0.5, 0.5],
       "rsm_stack_feedback_norm": [true, true],
