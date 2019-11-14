@@ -108,6 +108,8 @@ class SequenceMemoryStack(SummaryComponent):
         predictor_nonlinearity=['leaky-relu', 'leaky-relu'],
         predictor_optimize='accuracy',  # reconstruction, accuracy
         predictor_loss_type='cross-entropy',
+        predictor_input_norm_first=True,
+        predictor_input_decay_rate=0.0,
         predictor_keep_rate=1.0,
         predictor_init_sd=0.03,
         predictor_l2=0.0,
@@ -669,6 +671,8 @@ class SequenceMemoryStack(SummaryComponent):
     predictor_hparams.hidden_size = self._hparams.predictor_hidden_size
     predictor_hparams.norm_type = self._hparams.predictor_norm_type
     predictor_hparams.norm_eps = self._hparams.predictor_norm_eps
+    predictor_hparams.input_norm_first = self._hparams.predictor_input_norm_first
+    predictor_hparams.input_decay_rate = self._hparams.predictor_input_decay_rate
     predictor_hparams.keep_rate = self._hparams.predictor_keep_rate
     predictor_hparams.init_sd = self._hparams.predictor_init_sd
     predictor_hparams.l2 = self._hparams.predictor_l2

@@ -47,6 +47,7 @@ class PredictorComponent(SummaryComponent):
   keep = 'keep'
   accuracy = 'accuracy'
 
+  trace = 'trace'
   prediction = 'prediction'
   prediction_loss = 'prediction-loss'
   prediction_loss_sum = 'prediction-loss-sum'
@@ -82,6 +83,8 @@ class PredictorComponent(SummaryComponent):
         norm_eps = 1.0e-11,
 
         # Regularization
+        input_norm_first = True,  # else integrate first, then norm
+        input_decay_rate = 0.0,  # if > 0, then exponentially decay input trace
         keep_rate=1.0,
         l2=0.0,
         label_smoothing=0.0,  # adds a uniform weight to the training target distribution
@@ -171,11 +174,47 @@ class PredictorComponent(SummaryComponent):
       norm_input_4d = input_4d
     return norm_input_4d
 
+  def integrate_input(self):
+    if self._hparams.input_decay_rate > 0.0:
+      return True
+    return False
+
+  def _build_input_trace(self, input_4d, input_shape_4d):
+    trace_pl = self._dual.add(self.trace, shape=input_shape_4d, default_value=0.0).add_pl(default=True)
+    decay_4d = trace_pl * self._hparams.input_decay_rate
+
+    if self._hparams.input_norm_first:
+      # Norm this sample
+      norm_4d = self._build_input_norm(input_4d, input_shape_4d)
+
+      # Then integrate
+      trace_op = tf.maximum(decay_4d, norm_4d)
+    else:
+      # Integrate first
+      trace_4d = tf.maximum(decay_4d, input_4d)
+
+      # Then Norm
+      trace_op = self._build_input_norm(trace_4d, input_shape_4d)
+
+    # Store final version
+    self._dual.set_op(self.trace, trace_op)
+    return trace_op
+
+  def _build_input(self, input_4d, input_shape_4d):
+    """Builds all input conditioning"""
+    if self.integrate_input():
+      # Trace includes norm
+      trace_4d = self._build_input_trace(input_4d, input_shape_4d)
+      return trace_4d
+    else:  # Don't integrate
+      norm_4d = self._build_input_norm(input_4d, input_shape_4d)
+      return norm_4d
+
   def _build(self):
     """Build the autoencoder network"""
 
     # Norm inputs before flattening (e.g. to exploit local norm concepts)
-    input_values = self._build_input_norm(self._input_values, self._input_shape)
+    input_values = self._build_input(self._input_values, self._input_shape)
 
     # Flatten inputs
     input_volume = np.prod(self._input_shape[1:])
@@ -366,6 +405,9 @@ class PredictorComponent(SummaryComponent):
         keep_pl: keep_rate
     })
 
+    if self.integrate_input():
+      self._dual.update_feed_dict(feed_dict, [self.trace])
+
   def add_fetches(self, fetches, batch_type='training'):
     """Add the fetches for the session call."""
     # Predict
@@ -373,6 +415,9 @@ class PredictorComponent(SummaryComponent):
         self.loss: self._dual.get_op(self.loss),
         self.prediction: self._dual.get_op(self.prediction)
     }
+
+    if self.integrate_input():
+      self._dual.add_fetches(fetches, [self.trace])
 
     # Classify
     if self._hparams.optimize == self.accuracy:
@@ -414,6 +459,9 @@ class PredictorComponent(SummaryComponent):
 
     self._dual.set_fetches(fetched, names)
 
+    if self.integrate_input():
+      self._dual.set_fetches(fetched, [self.trace])
+
     super().set_fetches(fetched, batch_type)
 
   def _build_summaries(self, batch_type, max_outputs=3):
@@ -438,10 +486,18 @@ class PredictorComponent(SummaryComponent):
 
       # Input values (to do the prediction with)
       logging.debug('Input values shape: %s', str(self._input_shape))
-      summary_input_shape = self._build_summary_input_shape(self._input_shape)
+      summary_input_shape = self._build_summary_input_shape(self._input_shape.as_list())
+      #summary_input_shape = [300,80,60,1]
       input_reshape = tf.reshape(self._input_values, summary_input_shape)
       input_summary_op = tf.summary.image('input-summary', input_reshape, max_outputs=max_outputs)
       summaries.append(input_summary_op)
+
+      if self.integrate_input():
+        trace = self._dual.get_op(self.trace)
+        trace_reshape = tf.reshape(trace, summary_input_shape)
+        print('trace reshae: ', trace_reshape)
+        trace_summary_op = tf.summary.image('trace-summary', trace_reshape, max_outputs=max_outputs)
+        summaries.append(trace_summary_op)
 
     prediction_op = None
     if self._hparams.summarize_distribution:
