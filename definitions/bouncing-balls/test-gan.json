@@ -3,9 +3,9 @@
     "workflow": "rsm.workflows.composite_gan_video_workflow",
     "dataset": "rsm.datasets.bouncing_balls_dataset",
     "component": "rsm.components.composite_rsm_stack",
-    "batches": 29000,
+    "batches": 50000,
 
-    "checkpoint": "/home/incubator/agief-remote-run/rsm/run/summaries_20191021-102848/model.ckpt-29000",
+    "checkpoint": "/home/incubator/agief-remote-run/rsm/run/summaries_20191115-141045/model.ckpt-50000",
 
 
 

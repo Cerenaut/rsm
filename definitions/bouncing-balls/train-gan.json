@@ -5,7 +5,7 @@
     "component": "rsm.components.composite_rsm_stack",
     "batches": 50000,
 
-    "checkpoint": "/home/incubator/agief-remote-run/rsm/run/summaries_20191011-194708/model.ckpt-200000",
+    "checkpoint": "/home/incubator/agief-remote-run/storage/checkpoints/summaries_20191011-194708/model.ckpt-200000",
     "checkpoint_load_scope": "composite-rsm-stack/rsm_stack",
     "checkpoint_frozen_scope": "composite-rsm-stack/rsm_stack",
 

@@ -123,26 +123,23 @@ class GANComponent(SummaryComponent):
         if self.hparams.autoencoder == 'both':
           logging.info('Using autoencoder mode in %s.', self.name)
 
-          decoder_nonlinearity = 'leaky_relu'
-
-          bottleneck = conv_block(-1, fn=tf.layers.Conv2D, nonlinearity=decoder_nonlinearity)
-          layers.append(bottleneck)
-
           # Decoder
           for i in range(self.hparams.num_layers - 1, -1, -1):
-            layer = conv_block(i, fn=tf.layers.Conv2DTranspose, nonlinearity=decoder_nonlinearity)
+            if i == (self.hparams.num_layers - 1):
+              continue
+            layer = conv_block(i, fn=tf.layers.Conv2DTranspose, nonlinearity=self.hparams.nonlinearity[i])
             layers.append(layer)
 
         # Build output layer
         if self.hparams.autoencoder in ['decode', 'both']:
-          output_layer = layer_fn(
+          output_layer = tf.layers.Conv2DTranspose(
               filters=1,
               kernel_size=[
                   self.hparams.filters_field_height[-1],
                   self.hparams.filters_field_width[-1]
               ],
               padding='same',
-              strides=1,
+              strides=self.hparams.filters_field_stride[-1],
               activation=None,
               kernel_initializer=initializer
           )
