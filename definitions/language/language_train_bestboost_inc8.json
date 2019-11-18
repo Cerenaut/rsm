@@ -43,6 +43,7 @@
       "boost_factor_decay":[0.85],
       "boost_factor_update_interval":[1250],
 
+      "input_norm_first":false,
       "hidden_nonlinearity":"tanh",
       "decode_nonlinearity":["none"],
       "loss_type":"mse",
@@ -136,8 +137,11 @@
   },
   "parameter-sweeps": {
     "hparams": [
-      {"memory_training_interval":[0,40000],"rb_decay_trainable":[true]},
-      {"memory_training_interval":[0,45000],"rb_decay_trainable":[true]}
+      {"input_norm_first":true,"memory_training_interval":[0,45000],"rb_decay_trainable":[true]},
+      {"input_norm_first":true,"memory_training_interval":[0,50000],"rb_decay_trainable":[true]},
+      {"input_norm_first":false,"memory_training_interval":[0,50000],"rb_decay_trainable":[true]},
+      {"input_norm_first":false,"memory_training_interval":[0,55000],"rb_decay_trainable":[true]},
+      {"input_norm_first":false,"memory_training_interval":[0,60000],"rb_decay_trainable":[true]}
     ],
     "workflow-options": []
   }
