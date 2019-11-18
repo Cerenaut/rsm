@@ -838,12 +838,14 @@ class SequenceMemoryStack(SummaryComponent):
       ensemble_perplexity = self._dual.get_op(self.ensemble_perplexity)
       ensemble_cross_entropy_sum = self._dual.get_op(self.ensemble_loss_sum)
       #ensemble_top_1 = self._dual.get_op(self.ensemble_top_1)
+      ensemble_distribution = self._dual.get_op(self.ensemble_distribution)
+      ensemble_distribution_sum = tf.reduce_sum(ensemble_distribution)
 
       summaries.append(tf.summary.scalar('mean_perplexity', tf.reduce_mean(ensemble_perplexity)))
       summaries.append(tf.summary.scalar(self.ensemble_loss_sum, ensemble_cross_entropy_sum))
+      summaries.append(tf.summary.scalar('distribution_sum', ensemble_distribution_sum))
       #summaries.append(tf.summary.scalar(self.ensemble_top_1, ensemble_top_1))
 
-      ensemble_distribution = self._dual.get_op(self.ensemble_distribution)
       #ensemble_distribution = tf.Print(ensemble_distribution, [ensemble_distribution], 'DIST ', summarize=48)
       ensemble_shape = ensemble_distribution.get_shape().as_list()
       ensemble_shape_4d = [ensemble_shape[0], 1, ensemble_shape[1], 1]
