@@ -23,6 +23,7 @@ import tensorflow as tf
 
 from pagi.utils.hparam_multi import HParamMulti
 from pagi.components.composite_component import CompositeComponent
+from pagi.components.visual_cortex_component import VisualCortexComponent
 
 from rsm.components.gan_component import GANComponent
 from rsm.components.sequence_memory_layer import SequenceMemoryLayer
@@ -45,24 +46,20 @@ class CompositeRSMStack(CompositeComponent):
     batch_size = 64
     hparams = tf.contrib.training.HParams(
         batch_size=batch_size,
+        build_ae=False,
         build_rsm=True,
-        build_ae=True,
-        build_gan=True,
+        build_gan=False,
 
         gan_rsm_input='encoding'
     )
 
     # create all possible sub component hparams
-    ae_stack = SparseConvAutoencoderStack.default_hparams()
+    # ae_stack = SparseConvAutoencoderStack.default_hparams()
+    ae_stack = VisualCortexComponent.default_hparams()
     rsm_stack = SequenceMemoryStack.default_hparams()
     gan_stack = GANComponent.default_hparams()
 
     subcomponents = [ae_stack, rsm_stack, gan_stack]   # all possible subcomponents
-
-    def set_hparam_in_subcomponents(hparam_name, val):
-      """Sets the common hparams to sub components."""
-      for comp in subcomponents:
-        comp.set_hparam(hparam_name, val)
 
     rsm_stack.set_hparam('sparsity', [25])
     rsm_stack.set_hparam('cols', [200])
@@ -79,7 +76,7 @@ class CompositeRSMStack(CompositeComponent):
     rsm_stack.set_hparam('lifetime_sparsity_dends', False)
 
     # default hparams in individual component should be consistent with component level hparams
-    set_hparam_in_subcomponents('batch_size', batch_size)
+    HParamMulti.set_hparam_in_subcomponents(subcomponents, 'batch_size', batch_size)
 
     # add sub components to the composite hparams
     HParamMulti.add(source=ae_stack, multi=hparams, component=CompositeRSMStack.ae_name)
@@ -88,17 +85,8 @@ class CompositeRSMStack(CompositeComponent):
 
     return hparams
 
-  @property
-  def name(self):
-    return self._name
-
   def get_loss(self):
     return self.get_sub_component('output').get_loss()
-
-  def get_dual(self, name=None):  # pylint: disable=arguments-differ
-    if name is None:
-      return self._dual
-    return self.get_sub_component(name).get_dual()
 
   def build(self, input_values, input_shape, label_values, label_shape, hparams, decoder=None,
             name='composite-rsm-stack'):
@@ -111,11 +99,11 @@ class CompositeRSMStack(CompositeComponent):
         hparams: The hyperparameters for the model as tf.contrib.training.HParams.
         name: A globally unique graph name used as a prefix for all tensors and ops.
     """
-    self._name = name
+    self.name = name
     self._hparams = hparams
     self._input_values = input_values
 
-    with tf.variable_scope(self._name, reuse=tf.AUTO_REUSE):
+    with tf.variable_scope(self.name, reuse=tf.AUTO_REUSE):
       input_values_next = input_values
       input_shape_next = input_shape
 
@@ -141,6 +129,9 @@ class CompositeRSMStack(CompositeComponent):
     ae_stack = SparseConvAutoencoderStack()
     ae_stack_hparams = SparseConvAutoencoderStack.default_hparams()
 
+    ae_stack = VisualCortexComponent()
+    ae_stack_hparams = VisualCortexComponent.default_hparams()
+
     ae_stack_hparams = HParamMulti.override(multi=self._hparams, target=ae_stack_hparams, component=self.ae_name)
     ae_stack.build(input_values, input_shape, ae_stack_hparams, self.ae_name)
     self._add_sub_component(ae_stack, self.ae_name)
@@ -163,9 +154,9 @@ class CompositeRSMStack(CompositeComponent):
     self._layers = self.get_sub_component(self.rsm_name).get_layers()
 
     if self._hparams.gan_rsm_input == 'decoding':
-      input_values_next = self._layers[-1].get_op(SequenceMemoryLayer.decoding)
+      input_values_next = self._layers[0].get_op(SequenceMemoryLayer.decoding)
     else:
-      input_values_next = self._layers[-1].get_op(SequenceMemoryLayer.encoding)
+      input_values_next = self._layers[0].get_op(SequenceMemoryLayer.encoding)
 
     input_shape_next = input_values_next.get_shape().as_list()
 
@@ -188,8 +179,8 @@ class CompositeRSMStack(CompositeComponent):
   def get_gan_inputs(self):
     if self._hparams.build_rsm:
       if self._hparams.gan_rsm_input == 'decoding':
-        return self.get_sub_component(CompositeRSMStack.rsm_name).get_layer(-1).get_values(SequenceMemoryLayer.decoding)
-      return self.get_sub_component(CompositeRSMStack.rsm_name).get_layer(-1).get_values(SequenceMemoryLayer.encoding)
+        return self.get_sub_component(CompositeRSMStack.rsm_name).get_layer(0).get_values(SequenceMemoryLayer.decoding)
+      return self.get_sub_component(CompositeRSMStack.rsm_name).get_layer(0).get_values(SequenceMemoryLayer.encoding)
 
     if self._hparams.build_ae:
       return self.get_sub_component(CompositeRSMStack.ae_name).get_sub_component('output').get_encoding()

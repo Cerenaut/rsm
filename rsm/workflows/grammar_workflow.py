@@ -185,8 +185,9 @@ class GrammarWorkflow(ImageSequenceWorkflow):
 
     self._component.update_history(self._session, history_mask)
 
-  def training(self, training_handle, training_step):  # pylint: disable=arguments-differ
+  def training_step(self, training_handle, training_step, phase_change=False):  # pylint: disable=arguments-differ
     """The training procedure within the batch loop"""
+    del phase_change
 
     feed_dict = {
         self._placeholders['dataset_handle']: training_handle

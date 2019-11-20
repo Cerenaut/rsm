@@ -61,7 +61,7 @@ class VideoWorkflow(ImageSequenceWorkflow):
         testing_progress_interval=1,
         clear_before_test=True,
         frame_padding_size=0,
-        frame_padding_value=0,
+        frame_padding_value=0.0,
         profile_file=None
     )
 
@@ -143,8 +143,9 @@ class VideoWorkflow(ImageSequenceWorkflow):
 
     self._component.update_history(self._session, history_mask)
 
-  def training(self, dataset_handle, global_step):  # pylint: disable=arguments-differ
+  def training_step(self, dataset_handle, global_step, phase_change=None):  # pylint: disable=arguments-differ
     """The training procedure within the batch loop"""
+    del phase_change
 
     if self._freeze_training:
       batch_type = 'encoding'
@@ -168,14 +169,16 @@ class VideoWorkflow(ImageSequenceWorkflow):
     for b in range(self._hparams.batch_size):
       state = states[b]
 
+      decoding = self.get_decoded_frame()
+      previous = self.get_previous_frame()
+
+      # print('previous', np.min(previous), np.max(previous), np.mean(previous), np.std(previous))
+      # print('decoding', np.min(decoding), np.max(decoding), np.mean(decoding), np.std(decoding))
+
       # Check if the model has been primed
       if state >= (self._opts['prime_num_frames'] - 1):
-        decoding = self.get_decoded_frame()
-        previous = self.get_previous_frame()
-
         # Replace groundtruth with output decoding for the next step
         previous[b] = decoding[b]
-        # previous[b] = np.zeros_like(decoding[b])
         self.set_previous_frame(previous)
 
   def set_previous_frame(self, previous):
@@ -213,9 +216,14 @@ class VideoWorkflow(ImageSequenceWorkflow):
 
     return feed_dict
 
+  all_mse_gan = []
+  all_mse_rsm = []
+  all_mse_prev = []
+  previous_frame = None
+
   def _do_batch_after_hook(self, global_step, batch_type, fetched, feed_dict, data_subset):
     """Things to do after a batch is completed."""
-    del global_step, feed_dict, fetched
+    del feed_dict, fetched
 
     # Test-time conditions
     if batch_type == 'encoding' and data_subset == 'test':
@@ -228,6 +236,71 @@ class VideoWorkflow(ImageSequenceWorkflow):
       # Collect samples for video export
       self._output_frames.append(decoding)
       self._groundtruth_frames.append(self._inputs_vals)
+
+      if self.previous_frame is None:
+        self.previous_frame = np.zeros_like(self._inputs_vals)
+
+      def denormalize(arr):
+        eps = 1e-8
+        return ((arr - arr.min()) * (1/(arr.max() - arr.min() + eps) * 255)).astype('uint8')
+
+      def unpad(x, pad_width):
+        slices = []
+        for c in pad_width:
+          e = None if c[1] == 0 else -c[1]
+          slices.append(slice(c[0], e))
+        return x[tuple(slices)]
+
+      A = self._inputs_vals
+      B = decoding
+      C = self.previous_frame
+      D = self._component.get_gan_inputs()
+
+      # Reverse the padding
+      padding_size = self._opts['frame_padding_size']
+      if padding_size > 0:
+        pad_h = [padding_size] * 2
+        pad_w = [padding_size] * 2
+
+        pad_width = [[0, 0], pad_h, pad_w, [0, 0]]
+
+        A = unpad(A, pad_width)
+        B = unpad(B, pad_width)
+        C = unpad(C, pad_width)
+        D = unpad(D, pad_width)
+
+      num_features = np.prod(A.shape[1:])
+
+      mse_gan = ((A - B)**2).mean(axis=None)
+      mse_rsm = ((A - D)**2).mean(axis=None)
+      mse_prev = ((A - C)**2).mean(axis=None)
+
+      self.all_mse_gan.append(mse_gan * num_features)
+      self.all_mse_rsm.append(mse_rsm * num_features)
+      self.all_mse_prev.append(mse_prev * num_features)
+
+      avg_mse_gan = np.average(self.all_mse_gan)
+      avg_mse_rsm = np.average(self.all_mse_rsm)
+      avg_mse_prev = np.average(self.all_mse_prev)
+
+      # Write summaries
+      summary = tf.Summary()
+      summary.value.add(tag=self._component.name + '/summaries/' + batch_type + '/mse_gan',
+                        simple_value=mse_gan)
+      summary.value.add(tag=self._component.name + '/summaries/' + batch_type + '/mse_rsm',
+                        simple_value=mse_rsm)
+      summary.value.add(tag=self._component.name + '/summaries/' + batch_type + '/mse_prev',
+                        simple_value=mse_prev)
+      summary.value.add(tag=self._component.name + '/summaries/' + batch_type + '/avg_mse_gan',
+                        simple_value=avg_mse_gan)
+      summary.value.add(tag=self._component.name + '/summaries/' + batch_type + '/avg_mse_rsm',
+                        simple_value=avg_mse_rsm)
+      summary.value.add(tag=self._component.name + '/summaries/' + batch_type + '/avg_mse_prev',
+                        simple_value=avg_mse_prev)
+      self._writer.add_summary(summary, global_step)
+      self._writer.flush()
+
+      self.previous_frame = self._inputs_vals
 
     # Output as feedback for next step
     self._component.update_recurrent_and_feedback()
@@ -268,25 +341,43 @@ class VideoWorkflow(ImageSequenceWorkflow):
       # Export video
       fig1 = plt.figure(1)
       video_frames = []
-      for (frame, cmap) in output_frames:
-        video_frames.append([plt.imshow(frame, cmap=cmap, animated=True)])
+
+      for j, (frame, cmap) in enumerate(output_frames):
+        title = 'Priming'
+        if j >= self._opts['prime_num_frames']:
+          title = 'Self-looping'
+
+        ttl = plt.text(4, 1.2, title, horizontalalignment='center', verticalalignment='bottom')
+
+        video_frames.append([plt.imshow(frame, cmap=cmap, animated=True), ttl])
+
       ani = animation.ArtistAnimation(fig1, video_frames, interval=50, blit=True,
                                       repeat_delay=1000)
       ani.save(filepath + '.mp4')
+      plt.close(fig1)
 
       # Export frame by frame image
       num_frames = len(output_frames)
-      fig2 = plt.figure(figsize=(num_frames, 2))
-      gs1 = gridspec.GridSpec(1, num_frames)
+      fig2 = plt.figure(figsize=(num_frames + 1, 2))
+      gs1 = gridspec.GridSpec(1, num_frames + 1)
       gs1.update(wspace=0.025, hspace=0.05) # set the spacing between axes.
       plt.tight_layout()
 
-      for j, (frame, cmap) in enumerate(output_frames):
+      frame_idx = 0
+      for j in range(num_frames + 1):
+        if j == self._opts['prime_num_frames']:
+          frame, cmap = output_frames[0]
+          frame = np.zeros_like(frame)
+        else:
+          frame, cmap = output_frames[frame_idx]
+          frame_idx += 1
+
         ax = plt.subplot(gs1[j])
         ax.axis('off')
         ax.set_aspect('equal')
         ax.imshow(frame, cmap=cmap)
       fig2.savefig(filepath + '.png', bbox_inches='tight')
+      plt.close(fig2)
 
   def run(self, num_batches, evaluate, train=True):
     super(ImageSequenceWorkflow, self).run(num_batches, evaluate, train)  # pylint: disable=bad-super-call
@@ -295,7 +386,7 @@ class VideoWorkflow(ImageSequenceWorkflow):
     """Evaluation method."""
     logging.info('Evaluate starting...')
 
-    self._test_on_training_set = True
+    self._test_on_training_set = False
     if self._test_on_training_set is True:
       testing_handle = self._session.run(self._dataset_iterators['training'].string_handle())
     else:
@@ -329,9 +420,17 @@ class VideoWorkflow(ImageSequenceWorkflow):
 
       self.testing(testing_handle, test_batch)
 
-    # Create videos from frames
-    if self._output_frames:
-      self.frames_to_video(self._output_frames, filename='output')
+    export_videos = True
 
-    if self._groundtruth_frames:
-      self.frames_to_video(self._groundtruth_frames, filename='groundtruth')
+    if export_videos:
+    # Create videos from frames
+      if self._output_frames:
+        self.frames_to_video(self._output_frames, filename='output')
+
+      if self._groundtruth_frames:
+        self.frames_to_video(self._groundtruth_frames, filename='groundtruth')
+
+      if  self._output_frames and self._groundtruth_frames:
+        stacked_frames = np.concatenate(
+            [self._output_frames, np.zeros_like(self._output_frames), self._groundtruth_frames], axis=4)
+        self.frames_to_video(stacked_frames, filename='output_groundtruth')

@@ -4,8 +4,9 @@
     "dataset": "rsm.datasets.mnist_sequence_dataset",
     "component": "rsm.components.sequence_memory_stack",
     "batches": 50000,
+
     "hparams_override": {
-      "num_layers":1,
+      "num_layers": 1,
       "batch_size": 300,
 
       "memory_summarize_input":true,

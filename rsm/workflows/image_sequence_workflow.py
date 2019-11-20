@@ -103,8 +103,9 @@ class ImageSequenceWorkflow(Workflow):
     loss = self._component.get_values(SequenceMemoryStack.ensemble_loss_sum)
     return loss
 
-  def training(self, training_handle, training_step, training_fetches=None):
+  def training_step(self, training_handle, training_step, phase_change=False):  # pylint: disable=arguments-differ
     """The training procedure within the batch loop"""
+    del phase_change
 
     feed_dict = {
         self._placeholders['dataset_handle']: training_handle
@@ -151,7 +152,7 @@ class ImageSequenceWorkflow(Workflow):
         training_epoch = self._dataset.get_training_epoch(self._hparams.batch_size, training_step)
 
         # Perform the training, and retrieve feed_dict for evaluation phase
-        feed_dict = self.training(training_handle, batch)
+        feed_dict = self.training_step(training_handle, batch)
 
         self._on_after_training_batch(batch, training_step, training_epoch)
 

@@ -49,8 +49,9 @@ class GANWorkflow(Workflow):
       self._component.build_summaries(batch_types)  # Ask the component to unpack for you
 
 
-  def training(self, dataset_handle, global_step):  # pylint: disable=arguments-differ
+  def training_step(self, dataset_handle, global_step, phase_change=False):  # pylint: disable=arguments-differ
     """The training procedure within the batch loop"""
+    del phase_change
 
     labels_onehot_op = tf.one_hot(self._labels, depth=self._dataset.num_classes)
 

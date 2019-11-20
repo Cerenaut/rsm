@@ -204,7 +204,10 @@ class BouncingBallsDataset(Dataset):  # pylint: disable=W0223
       sequence = self._get_sequence(training)
       sequence_states = list(range(sequence.shape[0]))
 
-      offset = i % len(sequence)
+      offset = 0
+      if training:
+        offset = i % len(sequence)
+
       sequence = sequence[offset:]
       sequence_states = sequence_states[offset:]
       sequences.append(sequence)
@@ -219,7 +222,7 @@ class BouncingBallsDataset(Dataset):  # pylint: disable=W0223
       sequence = self._get_test_sequence()
 
     # Normalize
-    sequence = 2 * sequence - 1
+    # sequence = 2 * sequence - 1
     sequence = sequence.astype(np.float32)
 
     return sequence

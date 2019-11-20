@@ -19,6 +19,7 @@ from __future__ import absolute_import
 from __future__ import division
 from __future__ import print_function
 
+import numpy as np
 import tensorflow as tf
 
 from rsm.components.sequence_memory_layer import SequenceMemoryLayer
@@ -49,8 +50,8 @@ class CompositeGANVideoWorkflow(CompositeGANWorkflow, CompositeVideoWorkflow):
   def _build_prior_fetches(self):
     return {'inputs': self._inputs, 'states': self._states, 'end_states': self._end_states}
 
-  def training(self, dataset_handle, global_step):  # pylint: disable=arguments-differ
-    batch_type, fetched, feed_dict, data_subset = super().training(dataset_handle, global_step)
+  def training_step(self, dataset_handle, global_step, phase_change=False):  # pylint: disable=arguments-differ
+    batch_type, fetched, feed_dict, data_subset = super().training_step(dataset_handle, global_step, phase_change)
     self._do_batch_after_hook(global_step, batch_type, fetched, feed_dict, data_subset)
 
   def testing(self, dataset_handle, global_step):
@@ -77,5 +78,7 @@ class CompositeGANVideoWorkflow(CompositeGANWorkflow, CompositeVideoWorkflow):
     elif self._opts['frame_output'] == 'gan':
       gan_output = self._component.get_sub_component('gan').get_output()
       decoded_frame = gan_output
+
+    # decoded_frame = (decoded_frame - np.min(decoded_frame)) / (np.max(decoded_frame) - np.min(decoded_frame))
 
     return decoded_frame

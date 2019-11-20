@@ -185,11 +185,12 @@ class RAVDESSDataset(Dataset):  # pylint: disable=W0223
           if state == (sequences[b].shape[0] - 1):
             end_state = True
 
-          yield (frame, label, end_state)
+          yield (frame, label, state, end_state)
 
-    dataset = tf.data.Dataset.from_generator(generator, output_types=(tf.float32, tf.int32, tf.bool),
+    dataset = tf.data.Dataset.from_generator(generator, output_types=(tf.float32, tf.int32, tf.int32, tf.bool),
                                              output_shapes=(
                                                  tf.TensorShape([self.IMAGE_DIM, self.IMAGE_DIM, 3]),
+                                                 tf.TensorShape([]),
                                                  tf.TensorShape([]),
                                                  tf.TensorShape([])))
 

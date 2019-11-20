@@ -707,7 +707,7 @@ class SequenceMemoryLayer(SummaryComponent):
     # ff input update - we work with the PREVIOUS ff input. This code stores the current input for access next time.
     input_shape_list = self._input_values.get_shape().as_list()
     previous_pl = self._dual.add(self.previous, shape=input_shape_list, default_value=0.0).add_pl()
-    self._dual.set_op(self.previous, self._input_values)
+    self._dual.set_op(self.previous, self._input_values, override=True)
 
     # External input and learning target
     target, target_shape = self.get_target()
@@ -1168,12 +1168,12 @@ class SequenceMemoryLayer(SummaryComponent):
     freq_cell_values = freq_cell.get_values()
 
     feed_dict = {
-      freq_cell_pl: freq_cell_values
+        freq_cell_pl: freq_cell_values
     }
 
     boost_a = self.boost_assign
     fetches = {
-      boost_a: self._dual.get_op(boost_a)
+        boost_a: self._dual.get_op(boost_a)
     }
 
     # Update the variable
@@ -1200,7 +1200,8 @@ class SequenceMemoryLayer(SummaryComponent):
     boost_cells_1d = tf.math.exp((freq_target - freq_cell_pl) * boost_factor_pl)
     boost_shape_1d = [num_cells]
     boost_values = np.ones(num_cells)
-    #boost_v = tf.Variable(initial_value=boost_values, shape=boost_shape_1d, trainable=False, dtype=tf.float32)
+    # boost_shape_1d = [num_cells]
+    # boost_v = tf.Variable(initial_value=boost_values, shape=boost_shape_1d, trainable=False, dtype=tf.float32)
     boost_v = tf.Variable(initial_value=boost_values, trainable=False, dtype=tf.float32)
     boost_a = boost_v.assign(boost_cells_1d)
     self._dual.set_op(self.boost_assign, boost_a)
@@ -1317,7 +1318,7 @@ class SequenceMemoryLayer(SummaryComponent):
     # # Update cells' inhibition
     # inhibition_cells_5d = inhibition_cells_5d_pl * self._hparams.inhibition_decay # decay old inh
     # inhibition_cells_5d = tf.maximum(training_mask_cells_5d, inhibition_cells_5d)  # this should be per batch sample not only per dend
-    # self._dual.set_op(self.inhibition, inhibition_cells_5d)
+    # self._dual.set_op(self.inhibition, inhibition_cells_5d, override=True)
 
     # Update usage (test mask doesnt include lifetime bits)
     if self.use_freq():
@@ -1341,7 +1342,7 @@ class SequenceMemoryLayer(SummaryComponent):
   # def _build_update_boosting(self, training_mask_cells_5d):
   #   # Update cells' boost given activity
   #   boost_cells_5d_pl = self._dual.get_pl(self.inhibition)
-  #   self._dual.set_op(self.inhibition, boost_cells_5d)
+  #   self._dual.set_op(self.inhibition, boost_cells_5d, override=True)
 
   def _build_update_usage(self, mask_cells_5d):
     """Build graph op to update usage."""
@@ -1355,14 +1356,14 @@ class SequenceMemoryLayer(SummaryComponent):
     usage_col_1d = tf.reduce_sum(mask_cells_5d, axis=[0, 1, 2, 4]) # reduce over b,h,w: 0,1,2, 4 leaving col (3)
     usage_col_pl = self._dual.get(self.usage_col).get_pl()
     usage_col_op = usage_col_pl + usage_col_1d
-    self._dual.set_op(self.usage_col, usage_col_op)
+    self._dual.set_op(self.usage_col, usage_col_op, override=True)
 
     num_cells = self._hparams.cols * self._hparams.cells_per_col
     usage_cell_2d = tf.reduce_sum(mask_cells_5d, axis=[0, 1, 2]) # reduce over b,h,w: 0,1,2 leaving col,cell (3,4)
     usage_cell_1d = tf.reshape(usage_cell_2d, shape=[num_cells])
     usage_cell_pl = self._dual.get(self.usage_cell).get_pl()
     usage_cell_op = usage_cell_pl + usage_cell_1d
-    self._dual.set_op(self.usage_cell, usage_cell_op)
+    self._dual.set_op(self.usage_cell, usage_cell_op, override=True)
 
   def _build_nonlinearities(self, f_encoding_cells_5d, r_encoding_cells_5d, b_encoding_cells_5d, mask_cells_5d):
     """Mask the encodings, sum them, and apply nonlinearity. Don't backprop into the mask."""

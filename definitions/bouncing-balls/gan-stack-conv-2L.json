@@ -3,9 +3,11 @@
     "workflow": "rsm.workflows.composite_gan_video_workflow",
     "dataset": "rsm.datasets.bouncing_balls_dataset",
     "component": "rsm.components.composite_rsm_stack",
-    "batches": 10000,
+    "batches": 200000,
 
-    "checkpoint": "/home/incubator/agief-remote-run/rsm/run/summaries_20190913-101744/model.ckpt-10000",
+    "checkpoint": "/home/incubator/agief-remote-run/rsm/run/summaries_20190909-143842/model.ckpt-200000",
+    "checkpoint_load_scope": "composite-rsm-stack/rsm_stack",
+    "checkpoint_frozen_scope": "composite-rsm-stack/rsm_stack",
 
     "hparams_override": {
       "batch_size": 256,
@@ -71,7 +73,7 @@
       "gan_generator_filters": [256, 128, 64],
       "gan_generator_filters_field_width": [5, 5, 5],
       "gan_generator_filters_field_height": [5, 5, 5],
-      "gan_generator_filters_field_stride": [1, 2, 1],
+      "gan_generator_filters_field_stride": [2, 2, 2],
       "gan_generator_nonlinearity": ["leaky_relu", "leaky_relu", "leaky_relu"],
       "gan_generator_loss_mse_lambda": 1.0,
       "gan_generator_loss_adv_lambda": 0.0002,
@@ -90,23 +92,13 @@
     }
   },
   "export-options": {
-    "interval_batches": 1000
+    "interval_batches": 5000
   },
   "workflow-options": {
-    "train": true,
-    "evaluate": true,
-    "summarize": true,
-
+    "evaluate": false,
     "pretrain_steps": 0,
 
-    "prime": true,
-    "prime_num_frames": 50,
-
-    "num_testing_batches": 100,
-    "testing_progress_interval": 10,
-
     "frame_padding_size": 2,
-    "frame_padding_value": 0.5,
-    "frame_output": "gan"
+    "frame_padding_value": 0.5
   }
 }

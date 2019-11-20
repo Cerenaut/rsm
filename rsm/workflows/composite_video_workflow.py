@@ -36,6 +36,7 @@ class CompositeVideoWorkflow(CompositeWorkflow, VideoWorkflow):
         # Skip the first layer; we already have its reconstruction
         if i == 0:
           continue
+
         self._decoder(global_step, name, CompositeRSMStack.ae_name, sub_component.get_encoding(), feed_dict)
 
     if CompositeRSMStack.rsm_name in self._component.get_sub_components().keys():
@@ -57,4 +58,6 @@ class CompositeVideoWorkflow(CompositeWorkflow, VideoWorkflow):
 
   def _get_status(self):
     """Return some string proxy for the losses or errors being optimized"""
-    return self._component.get_sub_component('rsm_stack').get_loss()
+    if CompositeRSMStack.rsm_name in self._component.get_sub_components().keys():
+      return self._component.get_sub_component('rsm_stack').get_loss()
+    return 0.0

@@ -81,8 +81,9 @@ class CompositeGANWorkflow(CompositeWorkflow):
       gen_batch_type = self._component.gan_name + '-generator_' + gan_batch_type
       self._do_batch(fetches, feed_dict, gen_batch_type, data_subset, global_step)
 
-  def training(self, dataset_handle, global_step):  # pylint: disable=arguments-differ
+  def training_step(self, dataset_handle, global_step, phase_change=False):  # pylint: disable=arguments-differ
     """The training procedure within the batch loop"""
+    del phase_change
 
     data_subset = 'train'
 
