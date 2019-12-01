@@ -28,6 +28,9 @@ from pagi.utils import image_utils
 from pagi.utils.layer_utils import type_activation_fn
 from pagi.utils.tf_utils import tf_create_optimizer
 from pagi.utils.tf_utils import tf_do_training
+from pagi.utils.tf_utils import tf_get_kernel_initializer
+from pagi.utils.tf_utils import tf_init_type_none
+from pagi.utils.tf_utils import tf_init_type_normal
 
 from pagi.components.summary_component import SummaryComponent
 
@@ -72,7 +75,6 @@ class PredictorComponent(SummaryComponent):
 
         nonlinearity=['leaky-relu'],
         bias=True,
-        init_sd=0.03,
 
         # Geometry
         batch_size=80,
@@ -81,6 +83,10 @@ class PredictorComponent(SummaryComponent):
         # Norm
         norm_type = 'sum',  # Or None, currently
         norm_eps = 1.0e-11,
+
+        init_type=tf_init_type_normal,
+        init_type_bias=tf_init_type_normal,
+        init_sd=0.03,
 
         # Regularization
         input_norm_first = True,  # else integrate first, then norm
@@ -149,11 +155,17 @@ class PredictorComponent(SummaryComponent):
     #w_mode = 'FAN_AVG'
     #kernel_initializer = tf.contrib.layers.variance_scaling_initializer(factor=w_factor, mode=w_mode, uniform=False)
 
-    # Normal
-    init_sd = self._hparams.init_sd
-    kernel_initializer = tf.random_normal_initializer(stddev=init_sd)
-    bias_initializer = kernel_initializer
-    return kernel_initializer, bias_initializer
+    # Normal (Old code - new default)
+    # init_sd = self._hparams.init_sd
+    # kernel_initializer = tf.random_normal_initializer(stddev=init_sd)
+    # bias_initializer = kernel_initializer
+    # return kernel_initializer, bias_initializer
+    w_init = tf_get_kernel_initializer(init_type=self._hparams.init_type, initial_sd=self._hparams.init_sd)
+    if self._hparams.init_type_bias is not None:
+      b_init = tf_get_kernel_initializer(init_type=self._hparams.init_type_bias, initial_sd=self._hparams.init_sd)
+    else:
+      b_init = None
+    return w_init, b_init
 
   def _build_input_norm(self, input_4d, input_shape_4d):
     """Normalize/scale the input using the sum of the inputs."""

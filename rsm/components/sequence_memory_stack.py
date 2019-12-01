@@ -27,6 +27,7 @@ import tensorflow as tf
 from pagi.utils.tf_utils import tf_build_interpolate_distributions
 from pagi.utils.tf_utils import tf_build_cross_entropy
 from pagi.utils.tf_utils import tf_init_type_none
+from pagi.utils.tf_utils import tf_init_type_normal
 
 from pagi.utils.np_utils import np_uniform
 
@@ -112,6 +113,8 @@ class SequenceMemoryStack(SummaryComponent):
         predictor_input_norm_first=True,
         predictor_input_decay_rate=0.0,
         predictor_keep_rate=1.0,
+        predictor_init_type=tf_init_type_normal,
+        predictor_init_type_bias=tf_init_type_normal,
         predictor_init_sd=0.03,
         predictor_l2=0.0,
         predictor_label_smoothing=0.0,
@@ -677,6 +680,8 @@ class SequenceMemoryStack(SummaryComponent):
     predictor_hparams.input_norm_first = self._hparams.predictor_input_norm_first
     predictor_hparams.input_decay_rate = self._hparams.predictor_input_decay_rate
     predictor_hparams.keep_rate = self._hparams.predictor_keep_rate
+    predictor_hparams.init_type = self._hparams.predictor_init_type
+    predictor_hparams.init_type_bias = self._hparams.predictor_init_type_bias
     predictor_hparams.init_sd = self._hparams.predictor_init_sd
     predictor_hparams.l2 = self._hparams.predictor_l2
     predictor_hparams.label_smoothing = self._hparams.predictor_label_smoothing
