@@ -66,7 +66,8 @@ class TokenEmbeddingDataset(Dataset):  # pylint: disable=W0223
 
   def get_train(self, preprocess=False, options=None):  # pylint: disable=W0221
     """Returns tf.data.Dataset object """
-    init_offsets = 'striped'
+    #init_offsets = 'striped'
+    init_offsets = 'random'
     wrap_offsets = 'random'
     max_sequence_length = self._train_max_sequence_length
     return self._dataset(preprocess, options, self._embedding, 'train', init_offsets=init_offsets, wrap_offsets=wrap_offsets, max_sequence_length=max_sequence_length)
@@ -105,9 +106,9 @@ class TokenEmbeddingDataset(Dataset):  # pylint: disable=W0223
     """Get a list of words from the corpus."""
     return Embedding.tokenize_files([text_file], token_delimiter, eos)
 
-  def create_embedding(self, token_file, tokens_values_file, token_delimiter):
+  def create_embedding(self, token_file, tokens_values_file, token_delimiter, eos_token):
     e = Embedding()
-    e.read_tokens(token_file, token_delimiter)
+    e.read_tokens(token_file, token_delimiter)  # Must be none to not append
     e.read_tokens_values(tokens_values_file)
     #e.check()
     return e
@@ -125,7 +126,7 @@ class TokenEmbeddingDataset(Dataset):  # pylint: disable=W0223
     logging.info('Embedding file: %s', embedding_file)
     logging.info('Token file: %s', token_file)
     logging.info('Token delimiter: %s', token_delimiter)
-    logging.info('EOS: %s', eos)
+    logging.info('EOS token: %s', eos)
     logging.info('Training Max seq. len.: %s', str(train_max_sequence_length))
     logging.info('Testing Max seq. len.: %s', str(test_max_sequence_length))
     #logging.info('Random offsets: %s', str(random_offsets))
@@ -137,7 +138,7 @@ class TokenEmbeddingDataset(Dataset):  # pylint: disable=W0223
     #self._random_offsets = random_offsets
 
     # Create the embedding
-    self._embedding = self.create_embedding(token_file, embedding_file, token_delimiter)
+    self._embedding = self.create_embedding(token_file, embedding_file, token_delimiter, self._eos)
     num_tokens = self._embedding.get_num_tokens()
     token_value_shape = self._embedding.get_token_value_shape()
     logging.info('Embedding has %s keys and %s values.', str(num_tokens), str(token_value_shape))
@@ -282,7 +283,7 @@ class TokenEmbeddingDataset(Dataset):  # pylint: disable=W0223
             mask = 0.0  # clear history
 
           # Useful debugging info, but very verbose:
-          #logging.info('NEXT: Dataset subset: %s batch %d mask: %f offset: %s len: %d of %d', subset_key, b, mask, i, z, num_words)
+          #logging.info('NEXT: Dataset subset: %s batch %d mask: %f offset: %s len: %d of %d max seq len %d', subset_key, b, mask, i, z, num_words, max_sequence_length)
 
           sequence_offsets[b] = i
           sequence_lengths[b] = z

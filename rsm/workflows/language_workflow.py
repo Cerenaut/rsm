@@ -65,6 +65,7 @@ class LanguageWorkflow(Workflow):
     hparams.add_hparam('embedding_file', '')
     hparams.add_hparam('token_file', '')
     hparams.add_hparam('token_delimiter', ',')
+    hparams.add_hparam('eos_token', '</s>')
 
     return hparams
 
@@ -88,12 +89,13 @@ class LanguageWorkflow(Workflow):
       embedding_file = self._opts['embedding_file']
       token_file = self._opts['token_file']
       token_delimiter =  self._opts['token_delimiter']
+      eos_token =  self._opts['eos_token']
 
       self._dataset = self._dataset_type(self._dataset_location)
       self._dataset.setup(int(self._hparams.batch_size),
                           train_max_sequence_length, test_max_sequence_length,
                           corpus_train_file, corpus_test_file,
-                          token_file, embedding_file, token_delimiter)
+                          token_file, embedding_file, token_delimiter, eos_token)
 
       # Dataset for training
       train_dataset = self._dataset.get_train(options=self._opts)
@@ -208,17 +210,16 @@ class LanguageWorkflow(Workflow):
     # No effect if P=0
     if phase_change is True:
       logging.info('Phase change! Forgetting...')
-      stochastic_forgetting_probability = 1.0
+      stochastic_forgetting_probability = 1.0  # One-off change to prob.
     self._component.forget_history(self._session, stochastic_forgetting_probability)
 
     # Option to let dataset decide when to clear
     # History update with per-batch-sample flag for whether to clear
-    #max_sequence_length = self._opts['max_sequence_length']
-    #if max_sequence_length > 0:
     subset = self._dataset.get_subset(data_subset)
     history_mask = subset['mask']
     self._component.update_history(self._session, history_mask)
 
+    # Priming (for testing the model only)
     self._priming(phase)
 
     # Provide new data

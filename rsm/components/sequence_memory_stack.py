@@ -26,6 +26,8 @@ import tensorflow as tf
 
 from pagi.utils.tf_utils import tf_build_interpolate_distributions
 from pagi.utils.tf_utils import tf_build_cross_entropy
+from pagi.utils.tf_utils import tf_init_type_none
+from pagi.utils.tf_utils import tf_init_type_normal
 
 from pagi.utils.np_utils import np_uniform
 
@@ -68,21 +70,19 @@ class SequenceMemoryStack(SummaryComponent):
         loss_type='mse',
         learning_rate=0.0005,
         batch_size=80,
-        momentum=0.9,
-        momentum_nesterov=False,
 
         # Cache predictor
         cache_decay=0.9,
         cache_smart=False,
 
-        # Ensemble
+        # Ensemble (model interpolation)
         decode_mass=0.0,  # Generate a prediction directly from the RSM
         file_mass=0.0,  # A distribution loaded from external file
         cache_mass=0.0,  # Cache of older inputs
         uniform_mass=0.0,
         input_mass=0.0,
         layer_mass=1.0,  # Default to only use layer
-        ensemble_norm_eps=0.0000000001,  # 0.0001%
+        ensemble_norm_eps=1.0e-11,  # 0.0001%
 
         mode='predict-input',
         #autoencode=False,
@@ -110,34 +110,80 @@ class SequenceMemoryStack(SummaryComponent):
         predictor_nonlinearity=['leaky-relu', 'leaky-relu'],
         predictor_optimize='accuracy',  # reconstruction, accuracy
         predictor_loss_type='cross-entropy',
+        predictor_input_norm_first=True,
+        predictor_input_decay_rate=0.0,
         predictor_keep_rate=1.0,
-        predictor_l2_regularizer=0.0,
+        predictor_init_type=tf_init_type_normal,
+        predictor_init_type_bias=tf_init_type_normal,
+        predictor_init_sd=0.03,
+        predictor_l2=0.0,
         predictor_label_smoothing=0.0,
 
         # Memory predictor options
-        predictor_integrate_input=False,
-        predictor_norm_input=True,
+        #predictor_integrate_input=False, deprecated
+        predictor_norm_type='sum',
+        predictor_norm_eps=1.0e-11,
 
         # Regularization, 0=Off
-        l2_f=[0.0],
-        l2_r=[0.0],
-        l2_b=[0.0],
-        l2_d=[0.0],
+        f_l2=[0.0],
+        r_l2=[0.0],
+        b_l2=[0.0],
+        d_l2=[0.0],
+
+        f_init_type=[tf_init_type_none],
+        r_init_type=[tf_init_type_none],
+        b_init_type=[tf_init_type_none],
+        d_init_type=[tf_init_type_none],
+
+        f_bias_init_type=[tf_init_type_none],
+        r_bias_init_type=[tf_init_type_none],
+        b_bias_init_type=[tf_init_type_none],
+        d_bias_init_type=[tf_init_type_none],
+
+        f_init_sd=[0.0],
+        r_init_sd=[0.0],
+        b_init_sd=[0.0],
+        d_init_sd=[0.0],
+
+        f_bias=[False],
+        r_bias=[False],
+        b_bias=[False],
+        d_bias=[True],
 
         # Control statistics
         freq_update_interval=10,
         freq_learning_rate=0.1,
         freq_min=0.05, # used by lifetime sparsity mask
 
+        input_norm_first=False,  # Controls order of input ops in memory
         hidden_nonlinearity='tanh', # used for hidden layer only
         decode_nonlinearity=['none'], # Used for decoding
         decode_mode=['fc'],
 
         boost_factor=[0.0],  # Enables boost control if nonzero, replaces inhibition
+        boost_factor_decay=[0.0],
+        boost_factor_update_interval=[0],  # num training batches between boost factor updates
+
         inhibition_decay=[0.1],  # controls refractory period
-        feedback_decay_rate=[0.0],  # Optional integrated/exp decay feedback
-        feedback_keep_rate=[1.0],  # Optional dropout on feedback
-        feedback_norm=[True],
+        inhibition_with_mask=True,
+
+        hidden_keep_rate=[1.0],  # Optional dropout on hidden layer
+
+        f_keep_rate=[1.0],  # Optional dropout
+        f_decay_rate=[0.0],  # Optional integrated/exp decay
+        f_decay_floor=[0.0],  # if > 0, then clip to zero at this level
+        f_norm_type=[None],  # Option to normalize
+        f_norm_eps=[1.0e-11],  # Prevents norm /0
+        f_decay_trainable=[False],
+        f_decay_rate_max=[0.95],  # If trainable, then this is the max decay rate
+
+        rb_keep_rate=[1.0],  # Optional dropout on feedback
+        rb_decay_rate=[0.0],  # Optional integrated/exp decay feedback
+        rb_decay_floor=[0.0],  # if > 0, then clip to zero at this level
+        rb_norm_type=['sum'],  # Option to normalize feedback
+        rb_norm_eps=[1.0e-11],  # Prevents feedback norm /0
+        rb_decay_trainable=[False],
+        rb_decay_rate_max=[0.95],  # If trainable, then this is the max decay rate
 
         # Sparse parameters:
         sparsity=[25],
@@ -178,7 +224,7 @@ class SequenceMemoryStack(SummaryComponent):
     for i in range(layers-1):  # e.g. 0,1,2 = 3 layers
       upper = i +1
       lower = i
-      logging.info('Copying feedback from layer %s to layer %s', str(upper), str(lower))
+      logging.debug('Copying feedback from layer %s to layer %s', str(upper), str(lower))
       upper_layer = self.get_layer(upper)
       lower_layer = self.get_layer(lower)
       feedback_values = upper_layer.get_values(SequenceMemoryLayer.encoding)
@@ -411,8 +457,8 @@ class SequenceMemoryStack(SummaryComponent):
   def _build_layer_prediction_input(self):
     prediction_layer_idx = self.get_prediction_layer()
     prediction_layer = self._layers[prediction_layer_idx]
-    prediction_input = prediction_layer.get_op(SequenceMemoryLayer.prediction_input)
-    prediction_input_shape = prediction_layer.get_shape(SequenceMemoryLayer.prediction_input)
+    prediction_input = prediction_layer.get_op(SequenceMemoryLayer.encoding)
+    prediction_input_shape = prediction_layer.get_shape(SequenceMemoryLayer.encoding)
     return prediction_input, prediction_input_shape
 
   def _build_input_prediction_input(self):
@@ -448,9 +494,6 @@ class SequenceMemoryStack(SummaryComponent):
       layer_hparams.loss_type = self._hparams.loss_type
       layer_hparams.learning_rate = self._hparams.learning_rate
       layer_hparams.batch_size = self._hparams.batch_size
-      layer_hparams.momentum = self._hparams.momentum
-      layer_hparams.momentum_nesterov = self._hparams.momentum_nesterov
-
       layer_hparams.mode = self._hparams.mode
       #layer_hparams.autoencode = self._hparams.autoencode
 
@@ -461,7 +504,7 @@ class SequenceMemoryStack(SummaryComponent):
       layer_hparams.summarize_freq = self._hparams.memory_summarize_freq
 
       layer_hparams.training_interval = self._hparams.memory_training_interval
-
+      layer_hparams.input_norm_first = self._hparams.input_norm_first
       layer_hparams.hidden_nonlinearity = self._hparams.hidden_nonlinearity
 
       layer_hparams.predictor_use_input = False
@@ -493,21 +536,61 @@ class SequenceMemoryStack(SummaryComponent):
       layer_hparams.freq_learning_rate = self._hparams.freq_learning_rate
       layer_hparams.freq_min = self._hparams.freq_min
 
-      layer_hparams.predictor_norm_input = self._hparams.predictor_norm_input
-      layer_hparams.predictor_integrate_input = self._hparams.predictor_integrate_input
+      #layer_hparams.predictor_norm_input = self._hparams.predictor_norm_input
+      #layer_hparams.predictor_integrate_input = self._hparams.predictor_integrate_input
 
-      layer_hparams.l2_f = self._hparams.l2_f[i]
-      layer_hparams.l2_r = self._hparams.l2_r[i]
-      layer_hparams.l2_b = self._hparams.l2_b[i]
-      layer_hparams.l2_d = self._hparams.l2_d[i]
+      layer_hparams.f_l2 = self._hparams.f_l2[i]
+      layer_hparams.r_l2 = self._hparams.r_l2[i]
+      layer_hparams.b_l2 = self._hparams.b_l2[i]
+      layer_hparams.d_l2 = self._hparams.d_l2[i]
+
+      layer_hparams.f_init_type = self._hparams.f_init_type[i]
+      layer_hparams.r_init_type = self._hparams.r_init_type[i]
+      layer_hparams.b_init_type = self._hparams.b_init_type[i]
+      layer_hparams.d_init_type = self._hparams.d_init_type[i]
+
+      layer_hparams.f_bias_init_type = self._hparams.f_bias_init_type[i]
+      layer_hparams.r_bias_init_type = self._hparams.r_bias_init_type[i]
+      layer_hparams.b_bias_init_type = self._hparams.b_bias_init_type[i]
+      layer_hparams.d_bias_init_type = self._hparams.d_bias_init_type[i]
+
+      layer_hparams.f_init_sd = self._hparams.f_init_sd[i]
+      layer_hparams.r_init_sd = self._hparams.r_init_sd[i]
+      layer_hparams.b_init_sd = self._hparams.b_init_sd[i]
+      layer_hparams.d_init_sd = self._hparams.d_init_sd[i]
+
+      layer_hparams.f_bias = self._hparams.f_bias[i]
+      layer_hparams.r_bias = self._hparams.r_bias[i]
+      layer_hparams.b_bias = self._hparams.b_bias[i]
+      layer_hparams.d_bias = self._hparams.d_bias[i]
 
       layer_hparams.decode_mode = self._hparams.decode_mode[i]
       layer_hparams.decode_nonlinearity = self._hparams.decode_nonlinearity[i]
+
       layer_hparams.boost_factor = self._hparams.boost_factor[i]
+      layer_hparams.boost_factor_decay = self._hparams.boost_factor_decay[i]
+      layer_hparams.boost_factor_update_interval = self._hparams.boost_factor_update_interval[i]
+
       layer_hparams.inhibition_decay = self._hparams.inhibition_decay[i]
-      layer_hparams.feedback_decay_rate = self._hparams.feedback_decay_rate[i]
-      layer_hparams.feedback_keep_rate = self._hparams.feedback_keep_rate[i]
-      layer_hparams.feedback_norm = self._hparams.feedback_norm[i]
+      layer_hparams.inhibition_with_mask = self._hparams.inhibition_with_mask
+
+      layer_hparams.hidden_keep_rate = self._hparams.hidden_keep_rate[i]
+
+      layer_hparams.f_keep_rate = self._hparams.f_keep_rate[i]
+      layer_hparams.f_decay_rate = self._hparams.f_decay_rate[i]
+      layer_hparams.f_decay_floor = self._hparams.f_decay_floor[i]
+      layer_hparams.f_norm_type = self._hparams.f_norm_type[i]
+      layer_hparams.f_norm_eps = self._hparams.f_norm_eps[i]
+      layer_hparams.f_decay_trainable = self._hparams.f_decay_trainable[i]
+      layer_hparams.f_decay_rate_max = self._hparams.f_decay_rate_max[i]
+
+      layer_hparams.rb_keep_rate = self._hparams.rb_keep_rate[i]
+      layer_hparams.rb_decay_rate = self._hparams.rb_decay_rate[i]
+      layer_hparams.rb_decay_floor = self._hparams.rb_decay_floor[i]
+      layer_hparams.rb_norm_type = self._hparams.rb_norm_type[i]
+      layer_hparams.rb_norm_eps = self._hparams.rb_norm_eps[i]
+      layer_hparams.rb_decay_trainable = self._hparams.rb_decay_trainable[i]
+      layer_hparams.rb_decay_rate_max = self._hparams.rb_decay_rate_max[i]
 
       layer_hparams.sparsity = self._hparams.sparsity[i]
       layer_hparams.lifetime_sparsity_dends = self._hparams.lifetime_sparsity_dends
@@ -588,15 +671,19 @@ class SequenceMemoryStack(SummaryComponent):
     predictor_hparams.loss_type = self._hparams.predictor_loss_type
     predictor_hparams.learning_rate = self._hparams.learning_rate
     predictor_hparams.batch_size = self._hparams.batch_size
-    predictor_hparams.momentum = self._hparams.momentum
-    predictor_hparams.momentum_nesterov = self._hparams.momentum_nesterov
 
-    predictor_hparams.uniform_mass = 0.0
     predictor_hparams.training_interval = self._hparams.predictor_training_interval
     predictor_hparams.nonlinearity = self._hparams.predictor_nonlinearity
     predictor_hparams.hidden_size = self._hparams.predictor_hidden_size
+    predictor_hparams.norm_type = self._hparams.predictor_norm_type
+    predictor_hparams.norm_eps = self._hparams.predictor_norm_eps
+    predictor_hparams.input_norm_first = self._hparams.predictor_input_norm_first
+    predictor_hparams.input_decay_rate = self._hparams.predictor_input_decay_rate
     predictor_hparams.keep_rate = self._hparams.predictor_keep_rate
-    predictor_hparams.l2_regularizer = self._hparams.predictor_l2_regularizer
+    predictor_hparams.init_type = self._hparams.predictor_init_type
+    predictor_hparams.init_type_bias = self._hparams.predictor_init_type_bias
+    predictor_hparams.init_sd = self._hparams.predictor_init_sd
+    predictor_hparams.l2 = self._hparams.predictor_l2
     predictor_hparams.label_smoothing = self._hparams.predictor_label_smoothing
 
     predictor.build(prediction_input, prediction_input_shape, label_values, label_shape, target_values, target_shape,
@@ -759,12 +846,14 @@ class SequenceMemoryStack(SummaryComponent):
       ensemble_perplexity = self._dual.get_op(self.ensemble_perplexity)
       ensemble_cross_entropy_sum = self._dual.get_op(self.ensemble_loss_sum)
       #ensemble_top_1 = self._dual.get_op(self.ensemble_top_1)
+      ensemble_distribution = self._dual.get_op(self.ensemble_distribution)
+      ensemble_distribution_sum = tf.reduce_sum(ensemble_distribution)
 
       summaries.append(tf.summary.scalar('mean_perplexity', tf.reduce_mean(ensemble_perplexity)))
       summaries.append(tf.summary.scalar(self.ensemble_loss_sum, ensemble_cross_entropy_sum))
+      summaries.append(tf.summary.scalar('distribution_sum', ensemble_distribution_sum))
       #summaries.append(tf.summary.scalar(self.ensemble_top_1, ensemble_top_1))
 
-      ensemble_distribution = self._dual.get_op(self.ensemble_distribution)
       #ensemble_distribution = tf.Print(ensemble_distribution, [ensemble_distribution], 'DIST ', summarize=48)
       ensemble_shape = ensemble_distribution.get_shape().as_list()
       ensemble_shape_4d = [ensemble_shape[0], 1, ensemble_shape[1], 1]

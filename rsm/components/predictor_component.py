@@ -28,12 +28,16 @@ from pagi.utils import image_utils
 from pagi.utils.layer_utils import type_activation_fn
 from pagi.utils.tf_utils import tf_create_optimizer
 from pagi.utils.tf_utils import tf_do_training
+from pagi.utils.tf_utils import tf_get_kernel_initializer
+from pagi.utils.tf_utils import tf_init_type_none
+from pagi.utils.tf_utils import tf_init_type_normal
 
 from pagi.components.summary_component import SummaryComponent
 
 
 class PredictorComponent(SummaryComponent):
   """
+  TODO: Rename to ClassifierComponent (except: name taken.) Maybe NeuralClassifierComponent
   A stack of fully-connected dense layers for a supervised function approximation purpose,
   such as classification.
   """
@@ -46,6 +50,7 @@ class PredictorComponent(SummaryComponent):
   keep = 'keep'
   accuracy = 'accuracy'
 
+  trace = 'trace'
   prediction = 'prediction'
   prediction_loss = 'prediction-loss'
   prediction_loss_sum = 'prediction-loss-sum'
@@ -67,18 +72,27 @@ class PredictorComponent(SummaryComponent):
         optimize='accuracy',  # target, accuracy
         optimizer='adam',
         learning_rate=0.0005,
-        momentum=0.9,  # Ignore if adam
-        momentum_nesterov=False,
 
         nonlinearity=['leaky-relu'],
+        bias=True,
 
         # Geometry
         batch_size=80,
         hidden_size=[200],
 
+        # Norm
+        norm_type = 'sum',  # Or None, currently
+        norm_eps = 1.0e-11,
+
+        init_type=tf_init_type_normal,
+        init_type_bias=tf_init_type_normal,
+        init_sd=0.03,
+
         # Regularization
+        input_norm_first = True,  # else integrate first, then norm
+        input_decay_rate = 0.0,  # if > 0, then exponentially decay input trace
         keep_rate=1.0,
-        l2_regularizer=0.0,
+        l2=0.0,
         label_smoothing=0.0,  # adds a uniform weight to the training target distribution
 
         # Summary options
@@ -129,13 +143,95 @@ class PredictorComponent(SummaryComponent):
 
     self.reset()
 
+  def _build_initializers(self):
+    """Override to change the initializer. Returns weights and biases init."""
+    # TF Default: glorot_uniform_initializer
+    # Source: https://www.tensorflow.org/api_docs/python/tf/layers/Dense
+
+    # "Smart"
+    # https://adventuresinmachinelearning.com/weight-initialization-tutorial-tensorflow/
+    #w_factor = 1.0  # factor=1.0 for Xavier, 2.0 for He
+    #w_mode = 'FAN_IN'
+    #w_mode = 'FAN_AVG'
+    #kernel_initializer = tf.contrib.layers.variance_scaling_initializer(factor=w_factor, mode=w_mode, uniform=False)
+
+    # Normal (Old code - new default)
+    # init_sd = self._hparams.init_sd
+    # kernel_initializer = tf.random_normal_initializer(stddev=init_sd)
+    # bias_initializer = kernel_initializer
+    # return kernel_initializer, bias_initializer
+    w_init = tf_get_kernel_initializer(init_type=self._hparams.init_type, initial_sd=self._hparams.init_sd)
+    if self._hparams.init_type_bias is not None:
+      b_init = tf_get_kernel_initializer(init_type=self._hparams.init_type_bias, initial_sd=self._hparams.init_sd)
+    else:
+      b_init = None
+    return w_init, b_init
+
+  def _build_input_norm(self, input_4d, input_shape_4d):
+    """Normalize/scale the input using the sum of the inputs."""
+    # Optionally apply a norm to make input constant sum
+    # NOTE: Assuming here it is CORRECT to norm over conv w,h
+    if self._hparams.norm_type is not None:
+      if self._hparams.norm_type == 'sum':
+        eps = self._hparams.norm_eps
+        sum_input = tf.reduce_sum(input_4d, axis=[1, 2, 3], keepdims=True) + eps
+        norm_input_4d = tf.divide(input_4d, sum_input)
+
+        # TODO investigate alternative norm, e.g. frobenius norm:
+        #frobenius_norm = tf.sqrt(tf.reduce_sum(tf.square(input_values_next), axis=[1, 2, 3], keepdims=True))
+        # Layer norm..? There has to be a better norm than this.
+        # https://mlexplained.com/2018/11/30/an-overview-of-normalization-methods-in-deep-learning/
+        # https://mlexplained.com/2018/01/10/an-intuitive-explanation-of-why-batch-normalization-really-works-normalization-in-deep-learning-part-1/
+    else:
+      norm_input_4d = input_4d
+    return norm_input_4d
+
+  def integrate_input(self):
+    if self._hparams.input_decay_rate > 0.0:
+      return True
+    return False
+
+  def _build_input_trace(self, input_4d, input_shape_4d):
+    trace_pl = self._dual.add(self.trace, shape=input_shape_4d, default_value=0.0).add_pl(default=True)
+    decay_4d = trace_pl * self._hparams.input_decay_rate
+
+    if self._hparams.input_norm_first:
+      # Norm this sample
+      norm_4d = self._build_input_norm(input_4d, input_shape_4d)
+
+      # Then integrate
+      trace_op = tf.maximum(decay_4d, norm_4d)
+    else:
+      # Integrate first
+      trace_4d = tf.maximum(decay_4d, input_4d)
+
+      # Then Norm
+      trace_op = self._build_input_norm(trace_4d, input_shape_4d)
+
+    # Store final version
+    self._dual.set_op(self.trace, trace_op)
+    return trace_op
+
+  def _build_input(self, input_4d, input_shape_4d):
+    """Builds all input conditioning"""
+    if self.integrate_input():
+      # Trace includes norm
+      trace_4d = self._build_input_trace(input_4d, input_shape_4d)
+      return trace_4d
+    else:  # Don't integrate
+      norm_4d = self._build_input_norm(input_4d, input_shape_4d)
+      return norm_4d
+
   def _build(self):
     """Build the autoencoder network"""
+
+    # Norm inputs before flattening (e.g. to exploit local norm concepts)
+    input_values = self._build_input(self._input_values, self._input_shape)
 
     # Flatten inputs
     input_volume = np.prod(self._input_shape[1:])
     input_shape_1d = [self._hparams.batch_size, input_volume]
-    input_values_1d = tf.reshape(self._input_values, input_shape_1d)
+    input_values_1d = tf.reshape(input_values, input_shape_1d)
 
     target_shape_list = self._target_values.get_shape().as_list()
     target_volume = np.prod(target_shape_list[1:])
@@ -159,8 +255,14 @@ class PredictorComponent(SummaryComponent):
 
     for i, layer_size in enumerate(layer_sizes):
       activation = type_activation_fn(self._hparams.nonlinearity[i])
+      kernel_initializer, bias_initializer = self._build_initializers()
 
-      layer = tf.layers.Dense(layer_size, activation=activation, use_bias=True, name='prediction_layer_' + str(i + 1))
+      layer = tf.layers.Dense(layer_size,
+                              activation=activation,
+                              kernel_initializer=kernel_initializer,
+                              bias_initializer=bias_initializer,
+                              use_bias=self._hparams.bias,
+                              name='prediction_layer_' + str(i + 1))
       logging.info('Predictor layer: %d has size: %d and fn: %s ', i, layer_size, str(activation))
       self.layers.append(layer)
 
@@ -248,7 +350,7 @@ class PredictorComponent(SummaryComponent):
     self._dual.set_op(self.prediction_loss, prediction_loss)
 
     # Both paths: Regularization
-    if self._hparams.l2_regularizer == 0.0:
+    if self._hparams.l2 == 0.0:
       logging.info('NOT adding L2 weight regularization to predictor.')
       self._dual.set_op(self.loss, prediction_loss)
 
@@ -277,9 +379,10 @@ class PredictorComponent(SummaryComponent):
         l2_loss = tf.reduce_sum(l2_loss_w) + tf.reduce_sum(l2_loss_b)
 
         # Make the L2 loss scaling invariant to number of weights. the +1 is for biases
-        l2_normalizer = 1.0 / (num_cells * (num_inputs+1.0))
-        l2_scale = l2_normalizer * self._hparams.l2_regularizer
-        l2_loss_scaled = l2_loss * l2_scale
+        #l2_normalizer = 1.0 / (num_cells * (num_inputs+1.0))
+        #l2_scale = l2_normalizer * self._hparams.l2
+        #l2_loss_scaled = l2_loss * l2_scale
+        l2_loss_scaled = l2_loss * self._hparams.l2
         all_losses.append(l2_loss_scaled)
 
         i += 1
@@ -305,7 +408,7 @@ class PredictorComponent(SummaryComponent):
       keep_rate = self._hparams.keep_rate # reduced rate during training
     if batch_type == self.encoding:
       keep_rate = 1.0 # No dropout at test time
-    logging.debug('keep rate: %f', keep_rate)
+    logging.debug('Predictor keep rate: %f', keep_rate)
 
     keep = self._dual.get(self.keep)
     keep_pl = keep.get_pl()
@@ -314,6 +417,9 @@ class PredictorComponent(SummaryComponent):
         keep_pl: keep_rate
     })
 
+    if self.integrate_input():
+      self._dual.update_feed_dict(feed_dict, [self.trace])
+
   def add_fetches(self, fetches, batch_type='training'):
     """Add the fetches for the session call."""
     # Predict
@@ -321,6 +427,9 @@ class PredictorComponent(SummaryComponent):
         self.loss: self._dual.get_op(self.loss),
         self.prediction: self._dual.get_op(self.prediction)
     }
+
+    if self.integrate_input():
+      self._dual.add_fetches(fetches, [self.trace])
 
     # Classify
     if self._hparams.optimize == self.accuracy:
@@ -362,6 +471,9 @@ class PredictorComponent(SummaryComponent):
 
     self._dual.set_fetches(fetched, names)
 
+    if self.integrate_input():
+      self._dual.set_fetches(fetched, [self.trace])
+
     super().set_fetches(fetched, batch_type)
 
   def _build_summaries(self, batch_type, max_outputs=3):
@@ -386,10 +498,18 @@ class PredictorComponent(SummaryComponent):
 
       # Input values (to do the prediction with)
       logging.debug('Input values shape: %s', str(self._input_shape))
-      summary_input_shape = self._build_summary_input_shape(self._input_shape)
+      summary_input_shape = self._build_summary_input_shape(self._input_shape.as_list())
+      #summary_input_shape = [300,80,60,1]
       input_reshape = tf.reshape(self._input_values, summary_input_shape)
       input_summary_op = tf.summary.image('input-summary', input_reshape, max_outputs=max_outputs)
       summaries.append(input_summary_op)
+
+      if self.integrate_input():
+        trace = self._dual.get_op(self.trace)
+        trace_reshape = tf.reshape(trace, summary_input_shape)
+        print('trace reshae: ', trace_reshape)
+        trace_summary_op = tf.summary.image('trace-summary', trace_reshape, max_outputs=max_outputs)
+        summaries.append(trace_summary_op)
 
     prediction_op = None
     if self._hparams.summarize_distribution:

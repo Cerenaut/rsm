@@ -1,0 +1,122 @@
+{
+    "experiment-options":{
+    "workflow":"rsm.workflows.language_workflow",
+    "dataset":"rsm.datasets.token_embedding_dataset",
+    "component":"rsm.components.sequence_memory_stack",
+    "seed":99,
+    "batches":200000,
+    "hparams_override":{
+
+      "cache_decay":0.99,
+      "cache_smart":true,
+
+      "decode_mass":0.0,
+      "file_mass":0.0,
+      "uniform_mass":0.05,
+      "input_mass":0.0,
+      "layer_mass":0.95,
+      "cache_mass":0.0,
+
+      "predictor_training_interval":[0, -1],
+      "predictor_hidden_size":[1200],
+      "predictor_nonlinearity":["leaky-relu", "leaky-relu"],
+      "predictor_optimize":"accuracy",
+      "predictor_loss_type":"cross-entropy",
+      "predictor_keep_rate":1.0,
+      "predictor_l2":0.000001,
+      "predictor_label_smoothing":0.0,
+      "predictor_integrate_input":false,
+      "predictor_norm_input":true,
+
+      "learning_rate":0.0005,
+      "memory_training_interval":[0,60000],
+      "mode":"predict-input",
+      "num_layers":1,
+      "batch_size":300,
+      "sparsity":[80],
+      "cols":[1500],
+      "cells_per_col":[1],
+
+      "freq_update_interval":1,
+      "freq_learning_rate":0.1,
+
+      "boost_factor":[0.5],
+      "boost_factor_decay":[0.85],
+      "boost_factor_update_interval":[1250],
+
+      "hidden_nonlinearity":"tanh",
+      "decode_nonlinearity":["none"],
+      "loss_type":"mse",
+
+      "inhibition_decay":[0.5],
+      "inhibition_with_mask":false,
+
+      "feedback_norm":[true],
+      "feedback_decay_floor":[0.0005],
+      "feedback_decay_rate":[0.59],
+      "feedback_keep_rate":[1.0],
+      "hidden_keep_rate":[1.0],
+
+      "f_l2":[0.0],
+      "r_l2":[0.0],
+      "b_l2":[0.0],
+      "d_l2":[0.000001],
+
+      "f_bias":[true],
+      "r_bias":[true],
+      "b_bias":[false],
+      "d_bias":[false],
+
+      "f_init_sd":[0.03],
+      "r_init_sd":[0.03],
+      "b_init_sd":[0.03],
+      "d_init_sd":[0.03],
+
+      "filters_field_width": [100],
+      "filters_field_height": [1],
+      "filters_field_stride": [100],
+
+      "summarize_distributions":false,
+      "memory_summarize_freq":false,
+      "memory_summarize_input":false,
+      "memory_summarize_decoding":false
+
+    }
+  },
+  "export-options":{
+    "max_to_keep":50,
+    "interval_batches":30000
+  },
+  "classifier-options":{
+    "interval_batches":5000
+  },
+  "workflow-options":{
+    "train":true,
+    "evaluate":true,
+    "debug_start":-1,
+
+    "training_progress_interval":200,
+    "testing_progress_interval":200,
+
+    "num_validating_batches":270,
+    "num_testing_batches":270,
+    "perplexity_interval":270,
+    "average_accuracy_interval":270,
+
+    "train_max_sequence_length":3000,    
+    "test_max_sequence_length":0,
+    "stochastic_forgetting_probability":0.025,
+
+    "corpus_train":"/home/dave/dev/pagi/data/ptb.train.txt",
+    "corpus_test":"/home/dave/dev/pagi/data/ptb.test.txt",
+
+    "token_file":"/home/dave/dev/pagi/rsm/rsm/nlp/ptb_dense_10k_jg.tokens.txt",
+    "embedding_file":"/home/dave/dev/pagi/rsm/rsm/nlp/ptb_dense_10k_jg.token_paths.npy"
+  },
+  "parameter-sweeps": {
+    "hparams": [
+      {"l2_d":[0.0]}
+    ],
+    "workflow-options": []
+  }
+}

@@ -1,0 +1,139 @@
+{
+    "experiment-options":{
+    "workflow":"rsm.workflows.language_workflow",
+    "dataset":"rsm.datasets.token_embedding_dataset",
+    "component":"rsm.components.sequence_memory_stack",
+    "seed":42,
+    "batches":250000,
+    "hparams_override":{
+
+      "cache_decay":0.99,
+      "cache_smart":true,
+
+      "decode_mass":0.0,
+      "file_mass":0.0,
+      "uniform_mass":0.04,
+      "input_mass":0.0,
+      "layer_mass":0.87,
+      "cache_mass":0.09,
+
+      "predictor_training_interval":[0, -1],
+      "predictor_hidden_size":[1200],
+      "predictor_nonlinearity":["leaky-relu", "leaky-relu"],
+      "predictor_optimize":"accuracy",
+      "predictor_loss_type":"cross-entropy",
+      "predictor_input_norm_first":false,
+      "predictor_input_decay_rate":0.85,
+      "predictor_keep_rate":1.0,
+      "predictor_l2":0.000000608,
+      "predictor_label_smoothing":0.0,
+      "predictor_norm_type":"sum",
+      "predictor_norm_eps":1.0e-10,
+
+      "learning_rate":0.0005,
+      "memory_training_interval":[0,-1],
+      "input_norm_first":false,
+      "mode":"predict-input",
+      "num_layers":1,
+      "batch_size":300,
+      "sparsity":[20],
+      "cols":[600],
+      "cells_per_col":[8],
+
+      "freq_update_interval":40,
+      "freq_learning_rate":0.1,
+
+      "boost_factor":[0.0],
+      "boost_factor_decay":[0.85],
+      "boost_factor_update_interval":[3000],
+
+      "hidden_nonlinearity":"tanh",
+      "decode_nonlinearity":["none"],
+      "loss_type":"mse",
+
+      "inhibition_decay":[0.9],
+      "inhibition_with_mask":true,
+
+      "rb_norm_type":["sum"],
+      "rb_decay_floor":[0.0],
+      "rb_decay_rate":[0.85],
+      "rb_keep_rate":[0.5],
+
+      "hidden_keep_rate":[1.0],
+
+      "f_l2":[0.0],
+      "r_l2":[0.0],
+      "b_l2":[0.0],
+      "d_l2":[0.0],
+
+      "f_bias":[false],
+      "r_bias":[false],
+      "b_bias":[false],
+      "d_bias":[true],
+
+      "f_init_type":["truncated_normal"],
+      "r_init_type":["glorot_uniform"],
+      "b_init_type":["none"],
+      "d_init_type":["glorot_uniform"],
+
+      "f_bias_init_type":["zero"],
+      "r_bias_init_type":["glorot_uniform"],
+      "b_bias_init_type":["zero"],
+      "d_bias_init_type":["zero"],
+      
+      "f_init_sd":[0.03],
+      "r_init_sd":[0.03],
+      "b_init_sd":[0.03],
+      "d_init_sd":[0.03],
+
+      "filters_field_width": [28],
+      "filters_field_height": [1],
+      "filters_field_stride": [28],
+
+      "summarize_distributions":true,
+      "memory_summarize_input":false,
+      "memory_summarize_encoding":false,
+      "memory_summarize_weights":false,
+      "memory_summarize_freq":false
+
+    }
+  },
+  "export-options":{
+    "max_to_keep":50,
+    "interval_batches":30000
+  },
+  "classifier-options":{
+    "interval_batches":5000
+  },
+  "workflow-options":{
+    "train":true,
+    "evaluate":true,
+    "debug_start":-1,
+
+    "training_progress_interval":200,
+    "testing_progress_interval":200,
+
+    "num_validating_batches":270,
+    "num_testing_batches":270,
+    "perplexity_interval":270,
+    "average_accuracy_interval":270,
+
+    "train_max_sequence_length":3000,    
+    "test_max_sequence_length":0,
+    "stochastic_forgetting_probability":0.05,
+
+    "corpus_train":"/home/incubator/agief-remote-run/storage/data/ptb2/ptb.train.txt",
+    "corpus_test":"/home/incubator/agief-remote-run/storage/data/ptb2/ptb.test.txt",
+
+    "token_file":"/home/incubator/agief-remote-run/storage/data/ptb2/178c_emb.txt",
+    "embedding_file":"/home/incubator/agief-remote-run/storage/data/ptb2/178c_emb.npy"
+    
+  },
+  "parameter-sweeps": {
+    "hparams": [
+      {"memory_training_interval":[0,-1]}
+
+    ],
+    "workflow-options": []
+  }
+}
