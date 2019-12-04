@@ -61,20 +61,6 @@ class CompositeRSMStack(CompositeComponent):
 
     subcomponents = [ae_stack, rsm_stack, gan_stack]   # all possible subcomponents
 
-    rsm_stack.set_hparam('sparsity', [25])
-    rsm_stack.set_hparam('cols', [200])
-    rsm_stack.set_hparam('cells_per_col', [4])
-
-    rsm_stack.set_hparam('freq_min', 0.01)
-    rsm_stack.set_hparam('inhibition_decay', [0.1])
-
-    rsm_stack.set_hparam('feedback_norm', [True])
-    rsm_stack.set_hparam('feedback_decay_rate', [0.0])
-    rsm_stack.set_hparam('feedback_keep_rate', [1.0])
-
-    rsm_stack.set_hparam('lifetime_sparsity_cols', False)
-    rsm_stack.set_hparam('lifetime_sparsity_dends', False)
-
     # default hparams in individual component should be consistent with component level hparams
     HParamMulti.set_hparam_in_subcomponents(subcomponents, 'batch_size', batch_size)
 
