@@ -16,66 +16,95 @@
 """ECG Data Parser."""
 
 import os
+import pathlib
 import xml.etree.ElementTree as ET
+
 import numpy as np
 import matplotlib.pyplot as plt
 
 # 25/09/2019, Shuai Sun
+# 18/12/2019, Abdelrahman Ahmed
 
 INPUT_PATH = 'data/ecg_xml'
 OUTPUT_PATH = 'data/ecg'
 
-filename = [os.path.join(INPUT_PATH, 'x2.xml')]
+CLASSES = {
+    'normal': 0,
+    'abnormal': 1
+}
 
-data_temp1 = np.zeros((12, 5000))
-data_temp2 = np.zeros((12, 600))
+def parse_features(group):
+  features = []
+  for item in group:
+    item_value = item.text
+    x = item_value.split(',')
+    y = [float(p) for p in x]
+    features.append(y)
+  return features
 
-for file in filename:
-  tree = ET.parse(file)
-  root = tree.getroot()
 
+def parse_xml(root):
   for child in root:
     print(child.tag, ":", child.attrib, ':', child.text)
+
     for children in child:
       print(children.tag, ':', children.attrib, ':', children.text)
+
       for gradchild in children:
         print(gradchild.tag, ':', gradchild.attrib, gradchild.text)
 
-  data_group = root[-1]
 
-  # Full frequency = 500>
-  data_list = data_group[0]
-  counter = 0
-  for j in range(12):
-    item = data_list[j].text
-    x = item.split(',')
-    y = [float(p) for p in x]
-    data_temp1[counter, :] = y
-    counter += 1
+def main():
+  filepath = os.path.join(INPUT_PATH, '*.xml')
 
-  # AVG frequency = 500>
-  data_list = data_group[1]
-  counter = 0
-  for j in range(12):
-    item = data_list[j].text
-    x = item.split(',')
-    y = [float(p) for p in x]
-    data_temp2[counter, :] = y
-    counter += 1
+  filenames = []
+  for root, dirs, files in os.walk(INPUT_PATH):
+    for file in files:
+      if file.endswith('.xml'):
+        filepath = os.path.join(root, file)
+        filenames.append(filepath)
 
-data = np.append(data_temp1.transpose(), data_temp2.transpose(), 0)
+  print('filenames =', filenames)
 
-print(data.shape)
-train_data = np.zeros((5600, 12, 1))
-train_data[:, :, 0] = data
+  labels = []
+  full_frequency = []
+  avg_frequency = []
 
-label_data = np.zeros(5600)
-label_data[5000:-1] = 1
+  for file in filenames:
+    parent_dir = file.split('/')[-2]  # Get immediate parent of this file
+    label_key = parent_dir.split('.')[-1]
+    label = CLASSES[label_key]
+    labels.append(label)
 
-fig = plt.figure()
-plt.plot(train_data[:, 0, 0])
-# plt.show()
-fig.savefig('ecg.png', dpi=fig.dpi)
+    tree = ET.parse(file)
+    root = tree.getroot()
 
-# np.save(os.path.join(OUTPUT_PATH, 'training_data'), train_data)
-# np.save(os.path.join(OUTPUT_PATH, 'label_data'), label_data)
+    groups = root[-1]
+
+    # Full frequency = 500>
+    features = parse_features(groups[0])
+    full_frequency.append(features)
+
+    # AVG frequency = 500>
+    features = parse_features(groups[1])
+    avg_frequency.append(features)
+
+  labels = np.array(labels)
+  full_frequency = np.array(full_frequency)
+  avg_frequency = np.array(avg_frequency)
+
+  print('Labels (shape) =', labels.shape)
+  print('Full Frequency (shape) =', full_frequency.shape)
+  print('AVG Frequency (shape) =', avg_frequency.shape)
+
+  # fig = plt.figure()
+  # plt.plot(full_frequency[0, 0, :])
+  # fig.savefig('ecg.png', dpi=fig.dpi)
+
+  pathlib.Path(OUTPUT_PATH).mkdir(parents=True, exist_ok=True)
+
+  np.savez(os.path.join(OUTPUT_PATH, 'data'), full_frequency=full_frequency, avg_frequency=avg_frequency)
+  np.savez(os.path.join(OUTPUT_PATH, 'labels'), labels=labels)
+
+if __name__ == '__main__':
+  main()
