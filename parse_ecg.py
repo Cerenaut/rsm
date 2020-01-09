@@ -64,17 +64,18 @@ def main():
         filepath = os.path.join(root, file)
         filenames.append(filepath)
 
-  print('filenames =', filenames)
-
   labels = []
   full_frequency = []
   avg_frequency = []
 
+  print('Parsing XML...\n')
+
   for file in filenames:
     parent_dir = file.split('/')[-2]  # Get immediate parent of this file
     label_key = parent_dir.split('.')[-1]
-    label = CLASSES[label_key]
-    labels.append(label)
+
+    if label_key not in CLASSES:
+      continue
 
     tree = ET.parse(file)
     root = tree.getroot()
@@ -83,11 +84,18 @@ def main():
 
     # Full frequency = 500>
     features = parse_features(groups[0])
+
+    if len(features[0]) != 5000:
+      continue
+
     full_frequency.append(features)
 
     # AVG frequency = 500>
     features = parse_features(groups[1])
     avg_frequency.append(features)
+
+    label = CLASSES[label_key]
+    labels.append(label)
 
   labels = np.array(labels)
   full_frequency = np.array(full_frequency)
