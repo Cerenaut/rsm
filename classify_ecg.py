@@ -42,18 +42,22 @@ def find_peaks_2d(array, distance):
   """Extends scipy.signal.find_peaks to 2D-arrays."""
   peaks = []
 
+  lens = []
   for i, _ in enumerate(array):
     peaks_1d = []
     for j, _ in enumerate(array[i]):
       peaks_2d, _ = find_peaks(array[i][j], distance=distance)
       peaks_2d = list(peaks_2d)
+      lens.append(len(peaks_2d))
       peaks_1d.append(peaks_2d)
     peaks.append(peaks_1d)
 
-  return peaks
+  avg_len = int(np.mean(lens))
+
+  return peaks, avg_len
 
 
-def get_peak_values(array, peaks):
+def get_peak_values(array, peaks, peak_len=None):
   peaks_shape = [len(peaks), 0, 0]
 
   for sample in peaks:
@@ -61,25 +65,36 @@ def get_peak_values(array, peaks):
     if sample_max > peaks_shape[1]:
       peaks_shape[1] = sample_max
 
-    for lead in sample:
-      lead_max = len(lead)
-      if lead_max > peaks_shape[2]:
-        peaks_shape[2] = lead_max
+    if peak_len is None:
+      for lead in sample:
+        lead_max = len(lead)
+        if lead_max > peaks_shape[2]:
+          peaks_shape[2] = lead_max
+    else:
+      peaks_shape[2] = peak_len
 
   peak_values = np.zeros(peaks_shape)
-  peak_values_delta = np.zeros_like(peak_values)
+  peak_values_delta = np.zeros([peaks_shape[0], peaks_shape[1], peaks_shape[2] - 1])
   # print('Peak values (shape) =', peak_values.shape)
 
   for i, _ in enumerate(peaks):
     for j, v in enumerate(peaks[i]):
-      if v:
+      skip_peak = False
+
+      if not v:
+        skip_peak = True
+
+      if peak_len and len(v) < peak_len:
+        skip_peak = True
+
+      if not skip_peak:
+        if peak_len:
+          start = len(v) // 2 - peak_len // 2
+          v = v[start:start + peak_len]
         value = array[i][j][v]
         delta = np.diff(array[i][j][v])
         peak_values[i][j][0:len(v)] = value
         peak_values_delta[i][j][0:len(v)-1] = delta
-      else:
-        np.delete(peak_values, i, 0)
-        np.delete(peak_values_delta, i, 0)
 
   return peak_values, peak_values_delta
 
@@ -121,8 +136,8 @@ def main():
     peak_distance = 5
 
     spectrogram_max = np.amax(sg, axis=2)
-    peaks = find_peaks_2d(spectrogram_max, distance=peak_distance)
-    peak_values, peak_values_delta = get_peak_values(spectrogram_max, peaks)
+    peaks, avg_len = find_peaks_2d(spectrogram_max, distance=peak_distance)
+    peak_values, peak_values_delta = get_peak_values(spectrogram_max, peaks, peak_len=avg_len)
 
     # DEBUG: Show peaks in matplotlib, overlayed on plot as 'x'
     # sidx = 1
@@ -131,6 +146,7 @@ def main():
     # plt.show()
 
     input_data = peak_values_delta[:, lead_idx]  # pylint: disable=invalid-sequence-index
+    input_data = input_data[~np.all(input_data == 0, axis=1)]  # trim zeroed out arrays
   else:
     input_data = sg[:, lead_idx]
 
