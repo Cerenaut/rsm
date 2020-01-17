@@ -117,7 +117,7 @@ def main():
   # Signal Processing
   # ----------------------------------------------------------------------------
   timestep = 0.001    # it looks like milliseconds from the plot
-  window_size = 100
+  window_size = 20
 
   f, t, sg = spectrogram(signal, fs=1/timestep, window='hamming', nperseg=window_size, scaling='spectrum', axis=-1,
                          mode='magnitude')
@@ -137,6 +137,7 @@ def main():
 
     spectrogram_max = np.amax(sg, axis=2)
     peaks, avg_len = find_peaks_2d(spectrogram_max, distance=peak_distance)
+
     peak_values, peak_values_delta = get_peak_values(spectrogram_max, peaks, peak_len=avg_len)
 
     # DEBUG: Show peaks in matplotlib, overlayed on plot as 'x'
@@ -146,12 +147,16 @@ def main():
     # plt.show()
 
     input_data = peak_values_delta[:, lead_idx]  # pylint: disable=invalid-sequence-index
-    input_data = input_data[~np.all(input_data == 0, axis=1)]  # trim zeroed out arrays
+
+    nonzero_idxs = ~np.all(input_data == 0, axis=1)
+    input_data = input_data[nonzero_idxs]
+    input_labels = labels[nonzero_idxs]
   else:
     input_data = sg[:, lead_idx]
+    input_labels = labels
 
+  # Flatten the inputs
   input_data = np.reshape(input_data, [input_data.shape[0], np.prod(input_data.shape[1:])])
-  input_labels = labels
 
   # Classification
   # ---------------------------------------------------------------------------
@@ -172,9 +177,9 @@ def main():
 
   if model == 'nn':
     batch_size = 128
-    num_epochs = 250
-    num_units = [64]
-    penalty_l2 = 0.0
+    num_epochs = 100
+    num_units = [256]
+    penalty_l2 = 0.1
 
     inputs = keras.Input(shape=(train_data.shape[1],), name='inputs')
     layer_output = layers.Dense(num_units[0], activation='relu', name='dense_1',
