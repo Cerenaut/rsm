@@ -21,12 +21,17 @@ import xml.etree.ElementTree as ET
 
 import numpy as np
 import matplotlib.pyplot as plt
+from sklearn.model_selection import train_test_split
 
 # 25/09/2019, Shuai Sun
 # 18/12/2019, Abdelrahman Ahmed
 
 INPUT_PATH = 'data/ecg_xml'
 OUTPUT_PATH = 'data/ecg'
+
+SEED = 42
+FREQUENCY_LEN = 5000
+NUM_SAMPLES_PER_FILE = 2
 
 CLASSES = {
     'normal': 0,
@@ -54,65 +59,90 @@ def parse_xml(root):
         print(gradchild.tag, ':', gradchild.attrib, gradchild.text)
 
 
+def chunks(lst, n):
+  """Yield successive n-sized chunks from lst."""
+  for i in range(0, len(lst), n):
+    yield lst[i:i + n]
+
+
 def main():
   filepath = os.path.join(INPUT_PATH, '*.xml')
 
   filenames = []
-  for root, dirs, files in os.walk(INPUT_PATH):
+  for root, _, files in os.walk(INPUT_PATH):
     for file in files:
       if file.endswith('.xml'):
         filepath = os.path.join(root, file)
         filenames.append(filepath)
 
-  labels = []
-  full_frequency = []
-  avg_frequency = []
+  print('Parsing XML Data...\n')
 
-  print('Parsing XML...\n')
+  skipped_samples = {
+      'normal': {
+          'count': 0,
+          'files': []
+      },
+      'abnormal': {
+          'count': 0,
+          'files': []
+      },
+  }
 
-  for file in filenames:
-    parent_dir = file.split('/')[-2]  # Get immediate parent of this file
-    label_key = parent_dir.split('.')[-1]
+  filenames_chunks = list(chunks(filenames, NUM_SAMPLES_PER_FILE))
 
-    if label_key not in CLASSES:
-      continue
+  for i, filenames_chunk in enumerate(filenames_chunks):
+    labels = []
+    full_frequency = []
 
-    tree = ET.parse(file)
-    root = tree.getroot()
+    for j, filepath in enumerate(filenames_chunk):
+      parent_dir = filepath.split('/')[-2]  # Get immediate parent of this file
+      label_key = parent_dir.split('.')[-1]
 
-    groups = root[-1]
+      if label_key not in CLASSES:
+        continue
 
-    # Full frequency = 500>
-    features = parse_features(groups[0])
+      try:
+        tree = ET.parse(filepath)
+        root = tree.getroot()
+      except Exception:  # pylint: disable=broad-except
+        skipped_samples[label_key]['count'] += 1
+        skipped_samples[label_key]['files'].append(filepath)
+        continue
 
-    if len(features[0]) != 5000:
-      continue
+      groups = root[-1]
 
-    full_frequency.append(features)
+      # Full Frequency
+      features = parse_features(groups[0])
 
-    # AVG frequency = 500>
-    features = parse_features(groups[1])
-    avg_frequency.append(features)
+      if len(features[0]) != FREQUENCY_LEN:
+        skipped_samples[label_key]['count'] += 1
+        skipped_samples[label_key]['files'].append(filepath)
+        continue
 
-    label = CLASSES[label_key]
-    labels.append(label)
+      full_frequency.append(features)
 
-  labels = np.array(labels)
-  full_frequency = np.array(full_frequency)
-  avg_frequency = np.array(avg_frequency)
+      label = CLASSES[label_key]
+      labels.append(label)
 
-  print('Labels (shape) =', labels.shape)
-  print('Full Frequency (shape) =', full_frequency.shape)
-  print('AVG Frequency (shape) =', avg_frequency.shape)
+    labels = np.array(labels)
+    signal = np.array(full_frequency)
 
-  # fig = plt.figure()
-  # plt.plot(full_frequency[0, 0, :])
-  # fig.savefig('ecg.png', dpi=fig.dpi)
+    print('Labels (shape) =', labels.shape)
+    print('Signal (shape) =', signal.shape)
+    print('Number of skipped files:', skipped_samples)
 
-  pathlib.Path(OUTPUT_PATH).mkdir(parents=True, exist_ok=True)
+    pathlib.Path(OUTPUT_PATH).mkdir(parents=True, exist_ok=True)
 
-  np.savez(os.path.join(OUTPUT_PATH, 'data'), full_frequency=full_frequency, avg_frequency=avg_frequency)
-  np.savez(os.path.join(OUTPUT_PATH, 'labels'), labels=labels)
+    train_data, test_data, train_labels, test_labels = train_test_split(
+        signal, labels, stratify=labels, test_size=0.20, random_state=SEED)
+
+    filename_suffix = '-' + str(i)
+
+    np.savez_compressed(os.path.join(OUTPUT_PATH, 'train_data' + filename_suffix), signal=train_data)
+    np.savez_compressed(os.path.join(OUTPUT_PATH, 'train_labels' + filename_suffix), labels=train_labels)
+
+    np.savez_compressed(os.path.join(OUTPUT_PATH, 'test_data' + filename_suffix), signal=test_data)
+    np.savez_compressed(os.path.join(OUTPUT_PATH, 'test_labels' + filename_suffix), labels=test_labels)
 
 if __name__ == '__main__':
   main()
