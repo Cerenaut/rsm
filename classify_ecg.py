@@ -28,7 +28,7 @@ from sklearn.model_selection import train_test_split
 from sklearn.linear_model import LogisticRegression
 from sklearn import metrics
 from tensorflow import keras
-from tensorflow.keras import layers, regularizers
+from tensorflow.keras import layers, regularizers, models
 
 import ecg_utils
 
@@ -100,10 +100,25 @@ def main():
     _, signal_shape, _ = next(ecg_utils.npz_headers(i))
     num_train_samples += signal_shape[0]
 
+  num_train_labels = 0
+  for i in train_labels_files:
+    _, labels_shape, _ = next(ecg_utils.npz_headers(i))
+    num_train_labels += labels_shape[0]
+
   num_test_samples = 0
   for i in test_data_files:
     _, signal_shape, _ = next(ecg_utils.npz_headers(i))
     num_test_samples += signal_shape[0]
+
+  num_test_labels = 0
+  for i in test_labels_files:
+    _, labels_shape, _ = next(ecg_utils.npz_headers(i))
+    num_test_labels += labels_shape[0]
+
+  print('Number of training samples =', num_train_samples)
+  print('Number of training labels =', num_train_labels)
+  print('Number of test samples =', num_test_samples)
+  print('Number of test labels =', num_test_labels)
 
   # Preprocessing Parameters
   lead = 'I'
@@ -111,12 +126,12 @@ def main():
   window_size = 100
   peak_distance = 1
   peak_len = 17
-  mode = 'peaks'
+  mode = 'spectrogram'
 
   # NN Params
-  batch_size = 8
-  num_epochs = 1
-  num_units = [128]
+  batch_size = 128
+  num_epochs = 20
+  num_units = [256]
   penalty_l2 = 0.05
 
   print('==============================================================')
@@ -146,11 +161,16 @@ def main():
 
   sample_signal, _ = next(train_gen)
 
+  num_train_batches = int(np.ceil(num_train_samples / batch_size))
+  num_test_batches = int(np.ceil(num_test_samples / batch_size))
+
   # Classification
   # ---------------------------------------------------------------------------
   model = 'nn'  # logistic, nn
 
   if model == 'nn':
+    verbosity_level = 1
+
     inputs = keras.Input(shape=(sample_signal.shape[1],), name='inputs')
     layer_output = layers.Dense(num_units[0], activation='relu', name='dense_1',
                                 kernel_regularizer=regularizers.l2(penalty_l2))(inputs)
@@ -165,40 +185,41 @@ def main():
         log_dir='./run/cardioscan', histogram_freq=0, write_graph=True, write_images=True)
 
     model.fit_generator(train_gen,
-                        steps_per_epoch=num_train_samples,
+                        steps_per_epoch=num_train_batches,
                         epochs=num_epochs,
-                        verbose=0,
+                        verbose=verbosity_level,
                         callbacks=[tensorboard_cb])
+    model.save('./run/cardioscan/model.h5')
 
-    train_results = model.evaluate_generator(train_gen, steps=num_train_samples, verbose=0)
-    test_results = model.evaluate_generator(test_gen, steps=num_test_samples, verbose=0)
+    train_results = model.evaluate_generator(train_gen, steps=num_train_batches, verbose=verbosity_level)
+    test_results = model.evaluate_generator(test_gen, steps=num_test_batches, verbose=verbosity_level)
 
     _, train_acc = train_results
     _, test_acc = test_results
 
-    binary_threshold = 0.5
-    train_probs = model.predict_generator(train_gen, steps=num_train_samples)
-    train_preds = train_probs > binary_threshold
+    print('Training Accuracy =', train_results)
+    print('Test Accuracy =', test_acc)
 
-    test_probs = model.predict_generator(test_gen, steps=num_test_samples)
-    test_preds = test_probs > binary_threshold
+    # binary_threshold = 0.5
+    # train_probs = model.predict_generator(train_gen, steps=num_train_batches)
+    # train_preds = train_probs > binary_threshold
 
-    train_labels = []
-    for i, (_, labels) in enumerate(train_gen):
-      train_labels.extend(labels)
+    # test_probs = model.predict_generator(test_gen, steps=num_test_batches)
+    # test_preds = test_probs > binary_threshold
 
-      if len(train_labels) == num_train_samples:
-        break
+    # train_labels = []
+    # for i, (_, labels) in enumerate(train_gen):
+    #   train_labels.extend(labels)
 
-    test_labels = []
-    for i, (_, labels) in enumerate(test_gen):
-      test_labels.extend(labels)
+    #   if len(train_labels) == num_train_samples:
+    #     break
 
-      if len(test_labels) == num_test_samples:
-        break
+    # test_labels = []
+    # for i, (_, labels) in enumerate(test_gen):
+    #   test_labels.extend(labels)
 
-    print(train_labels)
-    print(test_labels)
+    #   if len(test_labels) == num_test_samples:
+    #     break
 
   else:
     clf = LogisticRegression(C=1.0, max_iter=1000, random_state=SEED)
@@ -210,30 +231,30 @@ def main():
     train_acc = clf.score(train_data, train_labels)
     test_acc = clf.score(test_data, test_labels)
 
-  train_f1 = metrics.classification_report(train_labels, train_preds)
-  train_cm = metrics.confusion_matrix(train_labels, train_preds)
+    train_f1 = metrics.classification_report(train_labels, train_preds)
+    train_cm = metrics.confusion_matrix(train_labels, train_preds)
 
-  test_f1 = metrics.classification_report(test_labels, test_preds)
-  test_cm = metrics.confusion_matrix(test_labels, test_preds)
+    test_f1 = metrics.classification_report(test_labels, test_preds)
+    test_cm = metrics.confusion_matrix(test_labels, test_preds)
 
-  def print_results(acc, f1, cm):
-    tn, fp, fn, tp = cm.ravel()
+    def print_results(acc, f1, cm):
+      tn, fp, fn, tp = cm.ravel()
 
-    print('Accuracy =', acc)
-    print('\n')
-    print('True Negatives =', tn)
-    print('False Positives =', fp)
-    print('False Negatives =', fn)
-    print('True Positives =', tp)
-    print('\n')
-    print(f1)
-    print('\n')
+      print('Accuracy =', acc)
+      print('\n')
+      print('True Negatives =', tn)
+      print('False Positives =', fp)
+      print('False Negatives =', fn)
+      print('True Positives =', tp)
+      print('\n')
+      print(f1)
+      print('\n')
 
-  print('================ Training Results ================')
-  print_results(train_acc, train_f1, train_cm)
+    print('================ Training Results ================')
+    print_results(train_acc, train_f1, train_cm)
 
-  print('================ Test Results     ================')
-  print_results(test_acc, test_f1, test_cm)
+    print('================ Test Results     ================')
+    print_results(test_acc, test_f1, test_cm)
 
 if __name__ == '__main__':
   main()
