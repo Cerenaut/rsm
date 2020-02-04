@@ -75,6 +75,8 @@ def main():
         filepath = os.path.join(root, file)
         filenames.append(filepath)
 
+  np.random.shuffle(filenames)
+
   print('Parsing XML Data...\n')
 
   skipped_samples = {
@@ -126,6 +128,11 @@ def main():
 
     labels = np.array(labels)
     signal = np.array(full_frequency)
+
+    classes, classes_freq = np.unique(labels, return_counts=True)
+
+    print('Classes =', classes)
+    print('Classes Frequency =', classes_freq)
 
     print('Labels (shape) =', labels.shape)
     print('Signal (shape) =', signal.shape)
