@@ -13,7 +13,11 @@
 # limitations under the License.
 # ==============================================================================
 
-"""ECG Data Classifier."""
+"""
+ECG Data Classifier.
+
+18/12/2019, Abdelrahman Ahmed
+"""
 
 import os
 import glob
@@ -29,10 +33,10 @@ from sklearn.linear_model import LogisticRegression
 from sklearn import metrics
 from tensorflow import keras
 from tensorflow.keras import layers, regularizers, models
+from pagi.utils.generic_utils import get_summary_dir
 
 import ecg_utils
 
-# 18/12/2019, Abdelrahman Ahmed
 
 INPUT_PATH = 'data/ecg'
 
@@ -130,9 +134,11 @@ def main():
 
   # NN Params
   batch_size = 128
-  num_epochs = 20
-  num_units = [256]
-  penalty_l2 = 0.05
+  num_epochs = 50
+  num_units = [1024]
+  penalty_l2 = 0.0
+
+  summary_dir = get_summary_dir()
 
   print('==============================================================')
   print('Using LEAD:', lead, '\n')
@@ -145,6 +151,8 @@ def main():
           signal = np.load(data_file)['signal']
           labels = np.load(labels_file)['labels']
 
+          # classes, classes_freq = np.unique(labels, return_counts=True)
+
           signal, labels = preprocess(signal, labels, timestep=timestep, window_size=window_size,
                                       peak_distance=peak_distance, peak_len=peak_len, mode=mode, lead=lead)
 
@@ -152,7 +160,9 @@ def main():
 
           for i in range(0, batches):
             end = min(len(signal), i * batch_size + batch_size)
-            yield signal[i * batch_size:end], labels[i * batch_size:end]
+            signal_batch = signal[i * batch_size:end]
+            labels_batch = labels[i * batch_size:end]
+            yield signal_batch, labels_batch
         except EOFError:
           print('Error processing files: ' + data_filepath)
 
@@ -161,19 +171,23 @@ def main():
 
   sample_signal, _ = next(train_gen)
 
-  num_train_batches = int(np.ceil(num_train_samples / batch_size))
-  num_test_batches = int(np.ceil(num_test_samples / batch_size))
+  num_train_batches = num_train_samples // batch_size
+  num_test_batches = num_test_samples // batch_size
+
+  print('Training Batches =', num_train_batches)
+  print('Test Batches =', num_test_batches)
 
   # Classification
   # ---------------------------------------------------------------------------
-  model = 'nn'  # logistic, nn
+  model_type = 'nn'  # logistic, nn
 
-  if model == 'nn':
+  if model_type == 'nn':
     verbosity_level = 1
+    model_path = os.path.join(summary_dir, 'model.h5')
 
     inputs = keras.Input(shape=(sample_signal.shape[1],), name='inputs')
-    layer_output = layers.Dense(num_units[0], activation='relu', name='dense_1',
-                                kernel_regularizer=regularizers.l2(penalty_l2))(inputs)
+    layer_output = layers.Dense(num_units[0], activation=None, name='dense_1')(inputs)
+    layer_output = layers.LeakyReLU(alpha=0.3)(layer_output)
     outputs = layers.Dense(1, activation='sigmoid', name='predictions')(layer_output)
 
     model = keras.Model(inputs=inputs, outputs=outputs)
@@ -182,27 +196,37 @@ def main():
                   metrics=['accuracy'])
 
     tensorboard_cb = keras.callbacks.TensorBoard(
-        log_dir='./run/cardioscan', histogram_freq=0, write_graph=True, write_images=True)
+        log_dir=summary_dir, histogram_freq=0, write_graph=True, write_images=True)
+
 
     model.fit_generator(train_gen,
                         steps_per_epoch=num_train_batches,
+                        validation_data=test_gen,
+                        validation_steps=num_test_batches,
                         epochs=num_epochs,
                         verbose=verbosity_level,
                         callbacks=[tensorboard_cb])
-    model.save('./run/cardioscan/model.h5')
+    model.save(model_path)
+
+    # Load the saved model
+    # model = models.load_model(model_path)
 
     train_results = model.evaluate_generator(train_gen, steps=num_train_batches, verbose=verbosity_level)
     test_results = model.evaluate_generator(test_gen, steps=num_test_batches, verbose=verbosity_level)
 
-    _, train_acc = train_results
-    _, test_acc = test_results
+    train_loss, train_acc = train_results
+    test_loss, test_acc = test_results
 
-    print('Training Accuracy =', train_results)
-    print('Test Accuracy =', test_acc)
+    print('Training Loss =', train_loss)
+    print('Training Accuracy =', train_acc, '\n')
+
+    print('Test Loss =', test_loss)
+    print('Test Accuracy =', test_acc, '\n')
 
     # binary_threshold = 0.5
     # train_probs = model.predict_generator(train_gen, steps=num_train_batches)
     # train_preds = train_probs > binary_threshold
+    # print(train_preds.shape)
 
     # test_probs = model.predict_generator(test_gen, steps=num_test_batches)
     # test_preds = test_probs > binary_threshold
