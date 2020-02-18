@@ -21,18 +21,25 @@ ECG Data Classifier.
 
 import os
 import glob
+import random
 import zipfile
 import itertools
 
 import numpy as np
+import tensorflow as tf
 import matplotlib.pyplot as plt
 
 from scipy.signal import spectrogram, find_peaks
-from sklearn.model_selection import train_test_split
-from sklearn.linear_model import LogisticRegression
+
 from sklearn import metrics
+from sklearn.linear_model import LogisticRegression
+from sklearn.model_selection import train_test_split
+
 from tensorflow import keras
+from tensorflow.keras import backend as K
 from tensorflow.keras import layers, regularizers, models
+from tensorflow.keras.utils import Sequence
+
 from pagi.utils.generic_utils import get_summary_dir
 
 import ecg_utils
@@ -79,7 +86,7 @@ def preprocess(signal, labels, window_size, timestep, peak_distance, peak_len=No
     input_labels = labels
 
   # Flatten the inputs
-  input_data = np.reshape(input_data, [input_data.shape[0], np.prod(input_data.shape[1:])])
+  # input_data = np.reshape(input_data, [input_data.shape[0], np.prod(input_data.shape[1:])])
 
   # print('Input data, flattened (shape)', input_data.shape)
   # print('Input labels (shape)', input_labels.shape, '\n')
@@ -88,6 +95,13 @@ def preprocess(signal, labels, window_size, timestep, peak_distance, peak_len=No
 
 
 def main():
+  os.environ['PYTHONHASHSEED'] = str(SEED)
+  random.seed(SEED)
+  np.random.seed(SEED)
+  tf.set_random_seed(SEED)
+  sess = tf.Session(graph=tf.get_default_graph())
+  K.set_session(sess)
+
   # Data Loader
   # ---------------------------------------------------------------------------
   train_data_files = glob.glob(os.path.join(INPUT_PATH, 'train_data-*.npz'))
@@ -133,25 +147,39 @@ def main():
   mode = 'spectrogram'
 
   # NN Params
-  batch_size = 128
-  num_epochs = 50
-  num_units = [1024]
-  penalty_l2 = 0.0
+  train_batch_size = 128
+  eval_batch_size = 20
+  num_epochs = 100
+  penalty_l2 = 0.0002
+
+  num_units = [512]
+
+  num_layers = 2
+  filters = [128, 256]
+  kernel_size = [6, 3]
+  strides = [1, 2]
+  dropout = [0.25, None]
 
   summary_dir = get_summary_dir()
 
   print('==============================================================')
   print('Using LEAD:', lead, '\n')
 
-  def data_generator(data_files, labels_files):
+  def data_generator(data_files, labels_files, batch_size, is_eval=False):
     """Reads data from disk using a generator fn."""
     while 1:
+      if not is_eval:
+        dataset = list(zip(data_files, labels_files))
+        random.shuffle(dataset)
+        data_files, labels_files = zip(*dataset)
+
       for data_file, labels_file in zip(data_files, labels_files):
         try:
           signal = np.load(data_file)['signal']
           labels = np.load(labels_file)['labels']
 
-          # classes, classes_freq = np.unique(labels, return_counts=True)
+          classes, _ = np.unique(labels, return_counts=True)
+          assert len(classes) == 2
 
           signal, labels = preprocess(signal, labels, timestep=timestep, window_size=window_size,
                                       peak_distance=peak_distance, peak_len=peak_len, mode=mode, lead=lead)
@@ -162,20 +190,28 @@ def main():
             end = min(len(signal), i * batch_size + batch_size)
             signal_batch = signal[i * batch_size:end]
             labels_batch = labels[i * batch_size:end]
+
             yield signal_batch, labels_batch
         except EOFError:
           print('Error processing files: ' + data_filepath)
 
-  train_gen = data_generator(train_data_files, train_labels_files)
-  test_gen = data_generator(test_data_files, test_labels_files)
+  train_gen = data_generator(train_data_files, train_labels_files, train_batch_size)
+  test_gen = data_generator(test_data_files, test_labels_files, train_batch_size)
+
+  train_batches = num_train_samples // train_batch_size
+  test_batches = num_test_samples // train_batch_size
+
+  eval_train_gen = data_generator(train_data_files, train_labels_files, eval_batch_size, is_eval=True)
+  eval_test_gen = data_generator(test_data_files, test_labels_files, eval_batch_size, is_eval=True)
+
+  eval_train_batches = num_train_samples // eval_batch_size
+  eval_test_batches = num_test_samples // eval_batch_size
 
   sample_signal, _ = next(train_gen)
 
-  num_train_batches = num_train_samples // batch_size
-  num_test_batches = num_test_samples // batch_size
-
-  print('Training Batches =', num_train_batches)
-  print('Test Batches =', num_test_batches)
+  print('Sample (shape) =', sample_signal.shape)
+  print('Training Batches (train/test) =', train_batches, test_batches)
+  print('Evaluation Batches (train/test) =', eval_train_batches, eval_test_batches)
 
   # Classification
   # ---------------------------------------------------------------------------
@@ -183,67 +219,108 @@ def main():
 
   if model_type == 'nn':
     verbosity_level = 1
+
     model_path = os.path.join(summary_dir, 'model.h5')
+    model = None
 
-    inputs = keras.Input(shape=(sample_signal.shape[1],), name='inputs')
-    layer_output = layers.Dense(num_units[0], activation=None, name='dense_1')(inputs)
-    layer_output = layers.LeakyReLU(alpha=0.3)(layer_output)
-    outputs = layers.Dense(1, activation='sigmoid', name='predictions')(layer_output)
-
-    model = keras.Model(inputs=inputs, outputs=outputs)
-    model.compile(optimizer='adam',
-                  loss='binary_crossentropy',
-                  metrics=['accuracy'])
-
-    tensorboard_cb = keras.callbacks.TensorBoard(
-        log_dir=summary_dir, histogram_freq=0, write_graph=True, write_images=True)
-
-
-    model.fit_generator(train_gen,
-                        steps_per_epoch=num_train_batches,
-                        validation_data=test_gen,
-                        validation_steps=num_test_batches,
-                        epochs=num_epochs,
-                        verbose=verbosity_level,
-                        callbacks=[tensorboard_cb])
-    model.save(model_path)
-
-    # Load the saved model
+    # model_path = os.path.join('./run/summaries_20200214-021812', 'model.h5')
     # model = models.load_model(model_path)
 
-    train_results = model.evaluate_generator(train_gen, steps=num_train_batches, verbose=verbosity_level)
-    test_results = model.evaluate_generator(test_gen, steps=num_test_batches, verbose=verbosity_level)
+    evaluate_only = False
+
+    if not evaluate_only:
+      arch_type = 'conv'  # fc or conv
+
+      if model is None:
+        inputs = keras.Input(shape=(sample_signal.shape[1], sample_signal.shape[2],))
+        layer_output = layers.BatchNormalization()(inputs)
+
+        if arch_type == 'conv':
+          for i in range(num_layers):
+            layer_output = layers.Conv1D(filters=filters[i], kernel_size=kernel_size[i], strides=strides[i],
+                                         activation=None, kernel_regularizer=regularizers.l2(penalty_l2))(layer_output)
+            layer_output = layers.LeakyReLU(alpha=0.3)(layer_output)
+            if dropout[i] is not None:
+              layer_output = layers.Dropout(0.25)(layer_output)
+        elif arch_type == 'fc':
+          layer_output = layers.Flatten()(layer_output)
+          layer_output = layers.Dense(num_units[0], activation=None,
+                                      kernel_regularizer=regularizers.l2(penalty_l2))(layer_output)
+          layer_output = layers.LeakyReLU(alpha=0.3)(layer_output)
+
+        layer_output = layers.Flatten()(layer_output)
+
+        outputs = layers.Dense(1, activation='sigmoid', name='predictions',
+                               kernel_regularizer=regularizers.l2(penalty_l2))(layer_output)
+
+        model = keras.Model(inputs=inputs, outputs=outputs)
+        model.compile(optimizer='adam',
+                      loss='binary_crossentropy',
+                      metrics=['accuracy'])
+
+      print(model.summary())
+
+      tensorboard_cb = keras.callbacks.TensorBoard(
+          log_dir=summary_dir, histogram_freq=0, write_graph=True, write_images=True)
+
+      # Train the model
+      model.fit_generator(train_gen,
+                          steps_per_epoch=train_batches,
+                          validation_data=test_gen,
+                          validation_steps=test_batches,
+                          epochs=num_epochs,
+                          verbose=verbosity_level,
+                          callbacks=[tensorboard_cb])
+
+      model.save(model_path)
+
+    # Load the saved model
+    if evaluate_only:
+      model = models.load_model(model_path)
+
+    # Evaluate model on the training set
+    train_results = model.evaluate_generator(eval_train_gen,
+                                             steps=eval_train_batches,
+                                             verbose=verbosity_level)
+
+    # Evaluate model on the test set
+    test_results = model.evaluate_generator(eval_test_gen,
+                                            steps=eval_test_batches,
+                                            verbose=verbosity_level)
 
     train_loss, train_acc = train_results
     test_loss, test_acc = test_results
 
-    print('Training Loss =', train_loss)
-    print('Training Accuracy =', train_acc, '\n')
+    # print('Training Loss =', train_loss)
+    # print('Training Accuracy =', train_acc, '\n')
 
-    print('Test Loss =', test_loss)
-    print('Test Accuracy =', test_acc, '\n')
+    # print('Test Loss =', test_loss)
+    # print('Test Accuracy =', test_acc, '\n')
 
-    # binary_threshold = 0.5
-    # train_probs = model.predict_generator(train_gen, steps=num_train_batches)
-    # train_preds = train_probs > binary_threshold
-    # print(train_preds.shape)
+    binary_threshold = 0.5
+    train_probs = model.predict_generator(eval_train_gen,
+                                          steps=eval_train_batches,
+                                          verbose=verbosity_level)
+    train_preds = train_probs > binary_threshold
 
-    # test_probs = model.predict_generator(test_gen, steps=num_test_batches)
-    # test_preds = test_probs > binary_threshold
+    test_probs = model.predict_generator(eval_test_gen,
+                                         steps=eval_test_batches,
+                                         verbose=verbosity_level)
+    test_preds = test_probs > binary_threshold
 
-    # train_labels = []
-    # for i, (_, labels) in enumerate(train_gen):
-    #   train_labels.extend(labels)
+    train_labels = []
+    for i, (_, labels) in enumerate(eval_train_gen):
+      train_labels.extend(labels)
 
-    #   if len(train_labels) == num_train_samples:
-    #     break
+      if len(train_labels) == num_train_samples:
+        break
 
-    # test_labels = []
-    # for i, (_, labels) in enumerate(test_gen):
-    #   test_labels.extend(labels)
+    test_labels = []
+    for i, (_, labels) in enumerate(eval_test_gen):
+      test_labels.extend(labels)
 
-    #   if len(test_labels) == num_test_samples:
-    #     break
+      if len(test_labels) == num_test_samples:
+        break
 
   else:
     clf = LogisticRegression(C=1.0, max_iter=1000, random_state=SEED)
@@ -255,30 +332,30 @@ def main():
     train_acc = clf.score(train_data, train_labels)
     test_acc = clf.score(test_data, test_labels)
 
-    train_f1 = metrics.classification_report(train_labels, train_preds)
-    train_cm = metrics.confusion_matrix(train_labels, train_preds)
+  train_f1 = metrics.classification_report(train_labels, train_preds)
+  train_cm = metrics.confusion_matrix(train_labels, train_preds)
 
-    test_f1 = metrics.classification_report(test_labels, test_preds)
-    test_cm = metrics.confusion_matrix(test_labels, test_preds)
+  test_f1 = metrics.classification_report(test_labels, test_preds)
+  test_cm = metrics.confusion_matrix(test_labels, test_preds)
 
-    def print_results(acc, f1, cm):
-      tn, fp, fn, tp = cm.ravel()
+  def print_results(acc, f1, cm):
+    tn, fp, fn, tp = cm.ravel()
 
-      print('Accuracy =', acc)
-      print('\n')
-      print('True Negatives =', tn)
-      print('False Positives =', fp)
-      print('False Negatives =', fn)
-      print('True Positives =', tp)
-      print('\n')
-      print(f1)
-      print('\n')
+    print('Accuracy =', acc)
+    print('\n')
+    print('True Negatives =', tn)
+    print('False Positives =', fp)
+    print('False Negatives =', fn)
+    print('True Positives =', tp)
+    print('\n')
+    print(f1)
+    print('\n')
 
-    print('================ Training Results ================')
-    print_results(train_acc, train_f1, train_cm)
+  print('================ Training Results ================')
+  print_results(train_acc, train_f1, train_cm)
 
-    print('================ Test Results     ================')
-    print_results(test_acc, test_f1, test_cm)
+  print('================ Test Results     ================')
+  print_results(test_acc, test_f1, test_cm)
 
 if __name__ == '__main__':
   main()
