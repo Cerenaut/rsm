@@ -26,7 +26,7 @@ from pagi.workflows.workflow import Workflow
 
 
 class GANWorkflow(Workflow):
-  """A simple workflow for GANs."""
+  """A simple workflow for standalone GANs. Not used in composite architectures."""
 
   def _setup_component(self):
     """Setup the component"""

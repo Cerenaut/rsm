@@ -27,6 +27,7 @@ import tensorflow as tf
 from pagi.components.summary_component import SummaryComponent
 
 from pagi.utils import image_utils
+from pagi.utils.tf_utils import tf_do_training
 from pagi.utils.layer_utils import type_activation_fn
 
 
@@ -35,12 +36,24 @@ class GANComponent(SummaryComponent):
   Sequence Memory layer component based on K-Sparse Convolutional Autoencoder with variable-order feedback dendrites.
   """
 
+  key_gen_adv_loss = 'gen_adv_loss'
+  key_gen_mse_loss = 'gen_mse_loss'
+  key_gen_total_loss = 'gen_total_loss'
+  key_disc_real_loss = 'disc_real_loss'
+  key_disc_fake_loss = 'disc_fake_loss'
+  key_disc_total_loss = 'disc_total_loss'
+
+  key_real_score = 'real_score'
+  key_fake_score = 'fake_score'
+
   @staticmethod
   def default_hparams():
     """Builds an HParam object with default hyperparameters."""
     return tf.contrib.training.HParams(
         batch_size=128,
         conditional=True,
+        training_interval=[0, -1],  # [0,-1] means from start, forever
+        summarize_tensors=False,
 
         # Generator-specific options
         generator_num_layers=2,
@@ -68,8 +81,30 @@ class GANComponent(SummaryComponent):
         discriminator_input_size=[28, 28, 1],
         discriminator_input_nonlinearity='relu',
         discriminator_output_nonlinearity='sigmoid',
-        discriminator_input_noise=False
+        discriminator_input_noise=False,
+        discriminator_input_noise_initial=0.1,
+        discriminator_input_noise_period=100
     )
+
+  def get_do_train_at_step(self, batch_type, step):
+    training_interval = self._hparams.training_interval
+    do_training = tf_do_training(batch_type, training_interval, step, name=self.name)
+    #print('gan train @t=', step, '?:', do_training, 'interval:',training_interval)
+    return do_training
+
+  def get_input_noise_at_step(self, batch_type, step):
+    training_interval = self._hparams.training_interval
+    first_step = training_interval[0]
+    relative_step = max(0, step - first_step)
+    initial_value = self._hparams.discriminator_input_noise_initial
+    period = self._hparams.discriminator_input_noise_period
+    noise = 0.0  # No noise
+    if relative_step < period:
+      fraction = float(relative_step) / float(period)
+      noise = 1.0 - min(1.0, fraction)
+    #print('gan noise @t=', relative_step, ' of ', period, '=', noise)
+    noise_scaled = initial_value * noise
+    return noise_scaled
 
   class BaseNetwork:
     """A base class with common methods for generator and discriminator."""
@@ -85,7 +120,7 @@ class GANComponent(SummaryComponent):
       with tf.variable_scope(self.name, reuse=tf.AUTO_REUSE, auxiliary_name_scope=False):
         layers = []
 
-        initializer = tf.random_normal_initializer(mean=0., stddev=0.02)
+        initializer = tf.random_normal_initializer(mean=0., stddev=0.02)  # TODO make this parameterizable
 
         def conv_block(i, fn=tf.layers.Conv2D, nonlinearity='leaky_relu'):
           return fn(
@@ -153,9 +188,11 @@ class GANComponent(SummaryComponent):
         outputs = inputs
         for layer in self.layers:
           outputs = layer(outputs)
-          print(outputs)
         output_nonlinearity = type_activation_fn(self.hparams.output_nonlinearity)
-        return outputs, output_nonlinearity(outputs)
+        if output_nonlinearity is None:
+          return outputs, outputs
+        else:
+          return outputs, output_nonlinearity(outputs)
 
     def trainable_variables(self):
       return tf.trainable_variables(self.name)
@@ -184,7 +221,7 @@ class GANComponent(SummaryComponent):
       return tf.reduce_mean(
           tf.nn.sigmoid_cross_entropy_with_logits(labels=tf.ones_like(fake_logits),
                                                   logits=fake_logits,
-                                                  name='gen_adv_loss')
+                                                  name=GANComponent.key_gen_adv_loss)
       )
 
   class Discriminator(BaseNetwork):
@@ -299,11 +336,11 @@ class GANComponent(SummaryComponent):
             name=self.gen_name)
 
         gen_input = gen_inputs_4d
-
-        print('gen_input', gen_input)
+        logging.info('GAN Generator input shape: %s', gen_input.shape)
 
         _, fake_output = self._generator(gen_input)
         fake_output_4d = tf.reshape(fake_output, real_input_shape)
+        logging.info('GAN Generator output shape: %s', real_input_shape)
 
         self._dual.set_op('fake_output', fake_output_4d)
 
@@ -325,14 +362,14 @@ class GANComponent(SummaryComponent):
           disc_real_input = disc_real_input + disc_input_noise
           disc_fake_input = disc_fake_input + disc_input_noise
 
-        print('disc_real_input', disc_real_input)
-        print('disc_fake_input', disc_fake_input)
+        logging.info('GAN Discriminator Real input shape: %s', disc_real_input.shape)
+        logging.info('GAN Discriminator Fake input shape: %s', disc_fake_input.shape)
 
         real_logits, real_score = self._discriminator(inputs=(disc_real_input, gen_inputs_4d))
         fake_logits, fake_score = self._discriminator(inputs=(disc_fake_input, gen_inputs_4d))
 
-        self._dual.set_op('real_score', real_score)
-        self._dual.set_op('fake_score', fake_score)
+        self._dual.set_op(self.key_real_score, real_score)
+        self._dual.set_op(self.key_fake_score, fake_score)
 
       with tf.name_scope(self.gen_name + '/loss'):
         gen_adv_loss = self._generator.loss(fake_logits)
@@ -340,9 +377,9 @@ class GANComponent(SummaryComponent):
         gen_total_loss = (self._hparams.generator_loss_mse_lambda * gen_mse_loss) + \
                          (self._hparams.generator_loss_adv_lambda * gen_adv_loss)
 
-        self._dual.set_op('gen_adv_loss', gen_adv_loss)
-        self._dual.set_op('gen_mse_loss', gen_mse_loss)
-        self._dual.set_op('gen_total_loss', gen_total_loss)
+        self._dual.set_op(GANComponent.key_gen_adv_loss, gen_adv_loss)
+        self._dual.set_op(GANComponent.key_gen_mse_loss, gen_mse_loss)
+        self._dual.set_op(GANComponent.key_gen_total_loss, gen_total_loss)
 
       with tf.variable_scope(self.gen_name + '/optimizer'):
         gen_optimizer = tf.train.AdamOptimizer(learning_rate=self._hparams.generator_learning_rate)
@@ -357,9 +394,9 @@ class GANComponent(SummaryComponent):
         disc_real_loss, disc_fake_loss = self._discriminator.loss(real_logits, fake_logits)
         disc_total_loss = disc_real_loss + disc_fake_loss
 
-        self._dual.set_op('disc_real_loss', disc_real_loss)
-        self._dual.set_op('disc_fake_loss', disc_fake_loss)
-        self._dual.set_op('disc_total_loss', disc_total_loss)
+        self._dual.set_op(GANComponent.key_disc_real_loss, disc_real_loss)
+        self._dual.set_op(GANComponent.key_disc_fake_loss, disc_fake_loss)
+        self._dual.set_op(GANComponent.key_disc_total_loss, disc_total_loss)
 
       with tf.variable_scope(self.disc_name + '/optimizer'):
         disc_optimizer = tf.train.GradientDescentOptimizer(learning_rate=self._hparams.discriminator_learning_rate)
@@ -373,6 +410,25 @@ class GANComponent(SummaryComponent):
   def get_loss(self):
     return self._loss
 
+  def get_losses(self):
+    losses = {}
+    losses[GANComponent.key_gen_adv_loss] = self._dual.get_values(GANComponent.key_gen_adv_loss)
+    losses[GANComponent.key_gen_mse_loss] = self._dual.get_values(GANComponent.key_gen_mse_loss)
+    losses[GANComponent.key_gen_total_loss] = self._dual.get_values(GANComponent.key_gen_total_loss)
+    losses[GANComponent.key_disc_real_loss] = self._dual.get_values(GANComponent.key_disc_real_loss)
+    losses[GANComponent.key_disc_fake_loss] = self._dual.get_values(GANComponent.key_disc_fake_loss)
+    losses[GANComponent.key_disc_total_loss] = self._dual.get_values(GANComponent.key_disc_total_loss)
+
+    real_score = self._dual.get_values(GANComponent.key_real_score)
+    fake_score = self._dual.get_values(GANComponent.key_fake_score)
+    if real_score is not None:
+      real_score = np.mean(real_score)
+    if fake_score is not None:
+      fake_score = np.mean(fake_score)
+    losses[GANComponent.key_real_score] = real_score
+    losses[GANComponent.key_fake_score] = fake_score
+    return losses
+
   def get_output(self):
     return self.get_values('fake_output')
 
@@ -382,21 +438,17 @@ class GANComponent(SummaryComponent):
   def add_fetches(self, fetches, batch_type=None):
     """Adds ops that will get evaluated."""
 
-    names = ['fake_output']
+    names = ['fake_output', GANComponent.key_real_score, GANComponent.key_fake_score]
 
     if batch_type.startswith(self._generator.name + '_'):
       real_batch_type = batch_type.split(self._generator.name + '_')[-1]
-
-      names.extend(['gen_total_loss'])
-
+      names.extend([GANComponent.key_gen_total_loss, GANComponent.key_gen_adv_loss, GANComponent.key_gen_mse_loss])
       if real_batch_type == 'training':
         names.extend(['gen_train_op'])
 
     elif batch_type.startswith(self._discriminator.name + '_'):
       real_batch_type = batch_type.split(self._discriminator.name + '_')[-1]
-
-      names.extend(['disc_total_loss'])
-
+      names.extend([GANComponent.key_disc_total_loss, GANComponent.key_disc_real_loss, GANComponent.key_disc_fake_loss])
       if real_batch_type == 'training':
         names.extend(['disc_train_op'])
 
@@ -404,32 +456,27 @@ class GANComponent(SummaryComponent):
       raise NotImplementedError('Batch type not supported: ' + batch_type)
 
     self._dual.add_fetches(fetches, names)
-
-    # Summaries
     super().add_fetches(fetches, real_batch_type)
 
   def set_fetches(self, fetched, batch_type='training'):
     """Store updated tensors"""
 
-    names = ['fake_output']
+    names = ['fake_output', GANComponent.key_real_score, GANComponent.key_fake_score]
 
-    # Loss (not a tensor)
     if batch_type.startswith(self._generator.name + '_'):
       real_batch_type = batch_type.split(self._generator.name + '_')[-1]
-
-      self._loss = fetched[self.name]['gen_total_loss']
+      self._loss = fetched[self.name][GANComponent.key_gen_total_loss]
+      self._dual.set_fetches(fetched, [GANComponent.key_gen_total_loss, GANComponent.key_gen_adv_loss, GANComponent.key_gen_mse_loss])
 
     elif batch_type.startswith(self._discriminator.name + '_'):
       real_batch_type = batch_type.split(self._discriminator.name + '_')[-1]
-
-      self._loss = fetched[self.name]['disc_total_loss']
+      self._loss = fetched[self.name][GANComponent.key_disc_total_loss]
+      self._dual.set_fetches(fetched, [GANComponent.key_disc_total_loss, GANComponent.key_disc_real_loss, GANComponent.key_disc_fake_loss])
 
     else:
       raise NotImplementedError('Batch type not supported: ' + batch_type)
 
     self._dual.set_fetches(fetched, names)
-
-    # Summaries
     super().set_fetches(fetched, real_batch_type)
 
   def write_summaries(self, step, writer, batch_type='training'):
@@ -437,7 +484,6 @@ class GANComponent(SummaryComponent):
       real_batch_type = batch_type.split(self._generator.name + '_')[-1]
     elif batch_type.startswith(self._discriminator.name + '_'):
       real_batch_type = batch_type.split(self._discriminator.name + '_')[-1]
-
     super().write_summaries(step, writer, real_batch_type)
 
   def _build_summaries(self, batch_type=None, max_outputs=3):
@@ -446,47 +492,49 @@ class GANComponent(SummaryComponent):
 
     summaries = []
 
-    summary_gen_input_shape = image_utils.get_image_summary_shape(self._gen_input_shape)
-    summary_real_input_shape = image_utils.get_image_summary_shape(self._real_input_shape)
+    if self._hparams.summarize_tensors is True:
+      summary_gen_input_shape = image_utils.get_image_summary_shape(self._gen_input_shape)
+      summary_real_input_shape = image_utils.get_image_summary_shape(self._real_input_shape)
 
-    gen_inputs_summary_reshape = tf.reshape(self._dual.get_pl('gen_inputs'), summary_gen_input_shape)
-    real_inputs_summary_reshape = tf.reshape(self._dual.get_pl('real_inputs'), summary_real_input_shape)
+      gen_inputs_summary_reshape = tf.reshape(self._dual.get_pl('gen_inputs'), summary_gen_input_shape)
+      real_inputs_summary_reshape = tf.reshape(self._dual.get_pl('real_inputs'), summary_real_input_shape)
 
-    summaries.append(tf.summary.image('gen_inputs', gen_inputs_summary_reshape, max_outputs=max_outputs))
-    summaries.append(tf.summary.image('real_inputs', real_inputs_summary_reshape, max_outputs=max_outputs))
+      summaries.append(tf.summary.image('gen_inputs', gen_inputs_summary_reshape, max_outputs=max_outputs))
+      summaries.append(tf.summary.image('real_inputs', real_inputs_summary_reshape, max_outputs=max_outputs))
 
-    # Concatenate input and reconstruction summaries
-    fake_output_summary_reshape = tf.reshape(self._dual.get_op('fake_output'), summary_real_input_shape)
-    reconstruction_summary_op = tf.summary.image('reconstruction', fake_output_summary_reshape,
-                                                 max_outputs=max_outputs)
-    summaries.append(reconstruction_summary_op)
+      # Concatenate input and reconstruction summaries
+      fake_output_summary_reshape = tf.reshape(self._dual.get_op('fake_output'), summary_real_input_shape)
+      reconstruction_summary_op = tf.summary.image('reconstruction', fake_output_summary_reshape,
+                                                   max_outputs=max_outputs)
+      summaries.append(reconstruction_summary_op)
 
+    # Scalar summaries
     # Record the discriminator score using REAL inputs
-    real_score_summary = tf.summary.scalar('score_real', tf.reduce_mean(self._dual.get_op('real_score')))
+    real_score_summary = tf.summary.scalar('score_real', tf.reduce_mean(self._dual.get_op(self.key_real_score)))
     summaries.append(real_score_summary)
 
     # Record the discriminator score using FAKE inputs
-    fake_score_summary = tf.summary.scalar('score_fake', tf.reduce_mean(self._dual.get_op('fake_score')))
+    fake_score_summary = tf.summary.scalar('score_fake', tf.reduce_mean(self._dual.get_op(self.key_fake_score)))
     summaries.append(fake_score_summary)
 
     # Record the Generator losses
-    gen_adv_loss_summary = tf.summary.scalar('gen_adv_loss', self._dual.get_op('gen_adv_loss'))
+    gen_adv_loss_summary = tf.summary.scalar(GANComponent.key_gen_adv_loss, self._dual.get_op(GANComponent.key_gen_adv_loss))
     summaries.append(gen_adv_loss_summary)
 
-    gen_mse_loss_summary = tf.summary.scalar('gen_mse_loss', self._dual.get_op('gen_mse_loss'))
+    gen_mse_loss_summary = tf.summary.scalar(GANComponent.key_gen_mse_loss, self._dual.get_op(GANComponent.key_gen_mse_loss))
     summaries.append(gen_mse_loss_summary)
 
-    gen_total_loss_summary = tf.summary.scalar('gen_total_loss', self._dual.get_op('gen_total_loss'))
+    gen_total_loss_summary = tf.summary.scalar(GANComponent.key_gen_total_loss, self._dual.get_op(GANComponent.key_gen_total_loss))
     summaries.append(gen_total_loss_summary)
 
     # Record the Discriminator loss
-    disc_real_loss_summary = tf.summary.scalar('disc_real_loss', self._dual.get_op('disc_real_loss'))
+    disc_real_loss_summary = tf.summary.scalar(GANComponent.key_disc_real_loss, self._dual.get_op(GANComponent.key_disc_real_loss))
     summaries.append(disc_real_loss_summary)
 
-    disc_fake_loss_summary = tf.summary.scalar('disc_fake_loss', self._dual.get_op('disc_fake_loss'))
+    disc_fake_loss_summary = tf.summary.scalar(GANComponent.key_disc_fake_loss, self._dual.get_op(GANComponent.key_disc_fake_loss))
     summaries.append(disc_fake_loss_summary)
 
-    disc_total_loss_summary = tf.summary.scalar('disc_total_loss', self._dual.get_op('disc_total_loss'))
+    disc_total_loss_summary = tf.summary.scalar(GANComponent.key_disc_total_loss, self._dual.get_op(GANComponent.key_disc_total_loss))
     summaries.append(disc_total_loss_summary)
 
 

@@ -214,7 +214,8 @@ class SequenceMemoryLayer(SummaryComponent):
         old_boost_factor = self._dual.get_values(self.boost_factor)
         new_boost_factor = np.copy(old_boost_factor)
         new_boost_factor = old_boost_factor * self._hparams.boost_factor_decay
-        logging.info('Updating BOOST=======================> %f -> %f', old_boost_factor, new_boost_factor)
+        if old_boost_factor > 0.00001:  # Who cares after this
+          logging.info('Updating BOOST=======================> %f -> %f', old_boost_factor, new_boost_factor)
         self._dual.set_values(self.boost_factor, new_boost_factor)
       self._boost_batch_count += 1
 
@@ -1575,6 +1576,8 @@ class SequenceMemoryLayer(SummaryComponent):
     # Feedback stays on-graph
     names = [self.inhibition, self.previous, self.recurrent, self.lifetime_mask]
     self._dual.update_feed_dict(feed_dict, names)
+
+    #print('prev =-----------------------', self._dual.get_values(self.previous))
 
     # Optional frequency monitoring
     if self.use_freq():

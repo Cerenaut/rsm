@@ -32,7 +32,7 @@ class CompositeGANWorkflow(CompositeWorkflow):
   def default_opts():
     """Builds an HParam object with default workflow options."""
     opts = CompositeWorkflow.default_opts()
-    opts.add_hparam('pretrain_steps', 2000)
+    opts.add_hparam('pretrain_steps', 2000)  # steps where only gan trains
     return opts
 
   def _build_prior_fetches(self):
@@ -133,6 +133,6 @@ class CompositeGANWorkflow(CompositeWorkflow):
   def run(self, num_batches, evaluate, train=True):
     if self._hparams.build_gan:
       gan_batches = (num_batches - 1) - self._opts['pretrain_steps']
-      self._disc_input_noise = np.linspace(0.1, 0.0, num=gan_batches)
+      self._disc_input_noise = np.linspace(0.1, 0.0, num=gan_batches)  # noise sd changes over time
 
     super().run(num_batches, evaluate, train)
