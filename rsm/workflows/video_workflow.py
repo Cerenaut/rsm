@@ -96,10 +96,10 @@ class VideoWorkflow(ImageSequenceWorkflow):
         self._dataset_iterators = {}
 
         with tf.variable_scope('train_dataset'):
-          self._dataset_iterators['training'] = train_dataset.make_initializable_iterator()
+          self._dataset_iterators['train'] = train_dataset.make_initializable_iterator()
 
         with tf.variable_scope('test_dataset'):
-          self._dataset_iterators['testing'] = test_dataset.make_initializable_iterator()
+          self._dataset_iterators['test'] = test_dataset.make_initializable_iterator()
 
   def _init_iterators(self):
     self._inputs, self._labels, self._states, self._end_states = self._iterator.get_next()
@@ -388,10 +388,10 @@ class VideoWorkflow(ImageSequenceWorkflow):
 
     self._test_on_training_set = False
     if self._test_on_training_set is True:
-      testing_handle = self._session.run(self._dataset_iterators['training'].string_handle())
+      testing_handle = self._session.run(self._dataset_iterators['train'].string_handle())
     else:
-      testing_handle = self._session.run(self._dataset_iterators['testing'].string_handle())
-      self._session.run(self._dataset_iterators['testing'].initializer)
+      testing_handle = self._session.run(self._dataset_iterators['test'].string_handle())
+      self._session.run(self._dataset_iterators['test'].initializer)
 
     # Clear the history of the component, because there'll be a discontinuity in the observed input
     # We just clear it ONCE before starting the new sequence

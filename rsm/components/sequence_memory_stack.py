@@ -484,6 +484,12 @@ class SequenceMemoryStack(SummaryComponent):
     if layer_input_shape[0] < 0:
       layer_input_shape[0] = self._hparams.batch_size
 
+    def get_layer_param(param, layer_idx, default_idx=0):
+      try:
+        return param[layer_idx]
+      except IndexError:
+        return param[default_idx]
+
     # Compute geometry of all layers
     for i in range(layers):
 
@@ -539,58 +545,58 @@ class SequenceMemoryStack(SummaryComponent):
       #layer_hparams.predictor_norm_input = self._hparams.predictor_norm_input
       #layer_hparams.predictor_integrate_input = self._hparams.predictor_integrate_input
 
-      layer_hparams.f_l2 = self._hparams.f_l2[i]
-      layer_hparams.r_l2 = self._hparams.r_l2[i]
-      layer_hparams.b_l2 = self._hparams.b_l2[i]
-      layer_hparams.d_l2 = self._hparams.d_l2[i]
+      layer_hparams.f_l2 = get_layer_param(self._hparams.f_l2, i)
+      layer_hparams.r_l2 = get_layer_param(self._hparams.r_l2, i)
+      layer_hparams.b_l2 = get_layer_param(self._hparams.b_l2, i)
+      layer_hparams.d_l2 = get_layer_param(self._hparams.d_l2, i)
 
-      layer_hparams.f_init_type = self._hparams.f_init_type[i]
-      layer_hparams.r_init_type = self._hparams.r_init_type[i]
-      layer_hparams.b_init_type = self._hparams.b_init_type[i]
-      layer_hparams.d_init_type = self._hparams.d_init_type[i]
+      layer_hparams.f_init_type = get_layer_param(self._hparams.f_init_type, i)
+      layer_hparams.r_init_type = get_layer_param(self._hparams.r_init_type, i)
+      layer_hparams.b_init_type = get_layer_param(self._hparams.b_init_type, i)
+      layer_hparams.d_init_type = get_layer_param(self._hparams.d_init_type, i)
 
-      layer_hparams.f_bias_init_type = self._hparams.f_bias_init_type[i]
-      layer_hparams.r_bias_init_type = self._hparams.r_bias_init_type[i]
-      layer_hparams.b_bias_init_type = self._hparams.b_bias_init_type[i]
-      layer_hparams.d_bias_init_type = self._hparams.d_bias_init_type[i]
+      layer_hparams.f_bias_init_type = get_layer_param(self._hparams.f_bias_init_type, i)
+      layer_hparams.r_bias_init_type = get_layer_param(self._hparams.r_bias_init_type, i)
+      layer_hparams.b_bias_init_type = get_layer_param(self._hparams.b_bias_init_type, i)
+      layer_hparams.d_bias_init_type = get_layer_param(self._hparams.d_bias_init_type, i)
 
-      layer_hparams.f_init_sd = self._hparams.f_init_sd[i]
-      layer_hparams.r_init_sd = self._hparams.r_init_sd[i]
-      layer_hparams.b_init_sd = self._hparams.b_init_sd[i]
-      layer_hparams.d_init_sd = self._hparams.d_init_sd[i]
+      layer_hparams.f_init_sd = get_layer_param(self._hparams.f_init_sd, i)
+      layer_hparams.r_init_sd = get_layer_param(self._hparams.r_init_sd, i)
+      layer_hparams.b_init_sd = get_layer_param(self._hparams.b_init_sd, i)
+      layer_hparams.d_init_sd = get_layer_param(self._hparams.d_init_sd, i)
 
-      layer_hparams.f_bias = self._hparams.f_bias[i]
-      layer_hparams.r_bias = self._hparams.r_bias[i]
-      layer_hparams.b_bias = self._hparams.b_bias[i]
-      layer_hparams.d_bias = self._hparams.d_bias[i]
+      layer_hparams.f_bias = get_layer_param(self._hparams.f_bias, i)
+      layer_hparams.r_bias = get_layer_param(self._hparams.r_bias, i)
+      layer_hparams.b_bias = get_layer_param(self._hparams.b_bias, i)
+      layer_hparams.d_bias = get_layer_param(self._hparams.d_bias, i)
 
-      layer_hparams.decode_mode = self._hparams.decode_mode[i]
-      layer_hparams.decode_nonlinearity = self._hparams.decode_nonlinearity[i]
+      layer_hparams.decode_mode = get_layer_param(self._hparams.decode_mode, i)
+      layer_hparams.decode_nonlinearity = get_layer_param(self._hparams.decode_nonlinearity, i)
 
-      layer_hparams.boost_factor = self._hparams.boost_factor[i]
-      layer_hparams.boost_factor_decay = self._hparams.boost_factor_decay[i]
-      layer_hparams.boost_factor_update_interval = self._hparams.boost_factor_update_interval[i]
+      layer_hparams.boost_factor = get_layer_param(self._hparams.boost_factor, i)
+      layer_hparams.boost_factor_decay =get_layer_param( self._hparams.boost_factor_decay, i)
+      layer_hparams.boost_factor_update_interval = get_layer_param(self._hparams.boost_factor_update_interval, i)
 
-      layer_hparams.inhibition_decay = self._hparams.inhibition_decay[i]
+      layer_hparams.inhibition_decay = get_layer_param(self._hparams.inhibition_decay, i)
       layer_hparams.inhibition_with_mask = self._hparams.inhibition_with_mask
 
-      layer_hparams.hidden_keep_rate = self._hparams.hidden_keep_rate[i]
+      layer_hparams.hidden_keep_rate = get_layer_param(self._hparams.hidden_keep_rate, i)
 
-      layer_hparams.f_keep_rate = self._hparams.f_keep_rate[i]
-      layer_hparams.f_decay_rate = self._hparams.f_decay_rate[i]
-      layer_hparams.f_decay_floor = self._hparams.f_decay_floor[i]
-      layer_hparams.f_norm_type = self._hparams.f_norm_type[i]
-      layer_hparams.f_norm_eps = self._hparams.f_norm_eps[i]
-      layer_hparams.f_decay_trainable = self._hparams.f_decay_trainable[i]
-      layer_hparams.f_decay_rate_max = self._hparams.f_decay_rate_max[i]
+      layer_hparams.f_keep_rate = get_layer_param(self._hparams.f_keep_rate, i)
+      layer_hparams.f_decay_rate = get_layer_param(self._hparams.f_decay_rate, i)
+      layer_hparams.f_decay_floor = get_layer_param(self._hparams.f_decay_floor, i)
+      layer_hparams.f_norm_type = get_layer_param(self._hparams.f_norm_type, i)
+      layer_hparams.f_norm_eps = get_layer_param(self._hparams.f_norm_eps, i)
+      layer_hparams.f_decay_trainable = get_layer_param(self._hparams.f_decay_trainable, i)
+      layer_hparams.f_decay_rate_max = get_layer_param(self._hparams.f_decay_rate_max, i)
 
-      layer_hparams.rb_keep_rate = self._hparams.rb_keep_rate[i]
-      layer_hparams.rb_decay_rate = self._hparams.rb_decay_rate[i]
-      layer_hparams.rb_decay_floor = self._hparams.rb_decay_floor[i]
-      layer_hparams.rb_norm_type = self._hparams.rb_norm_type[i]
-      layer_hparams.rb_norm_eps = self._hparams.rb_norm_eps[i]
-      layer_hparams.rb_decay_trainable = self._hparams.rb_decay_trainable[i]
-      layer_hparams.rb_decay_rate_max = self._hparams.rb_decay_rate_max[i]
+      layer_hparams.rb_keep_rate = get_layer_param(self._hparams.rb_keep_rate, i)
+      layer_hparams.rb_decay_rate = get_layer_param(self._hparams.rb_decay_rate, i)
+      layer_hparams.rb_decay_floor = self._hparams.rb_decay_floor
+      layer_hparams.rb_norm_type = get_layer_param(self._hparams.rb_norm_type, i)
+      layer_hparams.rb_norm_eps = get_layer_param(self._hparams.rb_norm_eps, i)
+      layer_hparams.rb_decay_trainable = get_layer_param(self._hparams.rb_decay_trainable, i)
+      layer_hparams.rb_decay_rate_max = get_layer_param(self._hparams.rb_decay_rate_max, i)
 
       layer_hparams.sparsity = self._hparams.sparsity[i]
       layer_hparams.lifetime_sparsity_dends = self._hparams.lifetime_sparsity_dends

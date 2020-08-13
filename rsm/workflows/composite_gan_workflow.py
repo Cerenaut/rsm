@@ -50,7 +50,7 @@ class CompositeGANWorkflow(CompositeWorkflow):
 
     gan_batch_type = batch_type
     if isinstance(batch_type, dict):
-      gan_batch_type = batch_type[self._component.name + '/' + self._component.gan_name]
+      gan_batch_type = batch_type[self._component.name + '/' + self._component.sampler_name]
 
     if gan_batch_type == 'encoding' or global_step > self._opts['pretrain_steps']:
       disc_input_noise = 0.0
@@ -60,7 +60,7 @@ class CompositeGANWorkflow(CompositeWorkflow):
         disc_input_noise = self._disc_input_noise[gan_step]
 
       def build_feed_dict(gen_inputs, real_inputs):
-        gan_dual = self._component.get_sub_component(CompositeRSMStack.gan_name).get_dual()
+        gan_dual = self._component.get_sub_component(CompositeRSMStack.sampler_name).get_dual()
         fetches = {}
         feed_dict = {
             gan_dual.get_pl('gen_inputs'): gen_inputs,
@@ -74,11 +74,11 @@ class CompositeGANWorkflow(CompositeWorkflow):
       gen_inputs = self._component.get_gan_inputs()
 
       fetches, feed_dict = build_feed_dict(gen_inputs, real_inputs)
-      disc_batch_type = self._component.gan_name + '-discriminator_' + gan_batch_type
+      disc_batch_type = self._component.sampler_name + '-discriminator_' + gan_batch_type
       self._do_batch(fetches, feed_dict, disc_batch_type, data_subset, global_step)
 
       fetches, feed_dict = build_feed_dict(gen_inputs, real_inputs)
-      gen_batch_type = self._component.gan_name + '-generator_' + gan_batch_type
+      gen_batch_type = self._component.sampler_name + '-generator_' + gan_batch_type
       self._do_batch(fetches, feed_dict, gen_batch_type, data_subset, global_step)
 
   def training_step(self, dataset_handle, global_step, phase_change=False):  # pylint: disable=arguments-differ

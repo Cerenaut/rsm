@@ -57,16 +57,24 @@ class MNISTMovingDataset(Dataset):  # pylint: disable=W0223
   def set_batch_size(self, batch_size):
     self._batch_size = batch_size
 
-  def _init_sequences(self, batch_size, frames):
+  def _init_sequences(self, training, batch_size):
     """Initialise the first N (=batch_size) sequences with some offset."""
     sequences = []
-    for i in range(batch_size):
-      sequence = self._get_sequence(frames)
+    states = []
 
-      offset = i % len(sequence)
+    for i in range(batch_size):
+      sequence = self._get_sequence(training)
+      sequence_states = list(range(sequence.shape[0]))
+
+      offset = 0
+      if training:
+        offset = i % len(sequence)
+
       sequence = sequence[offset:]
+      sequence_states = sequence_states[offset:]
       sequences.append(sequence)
-    return sequences
+      states.append(sequence_states)
+    return sequences, states
 
   def _get_sequence(self, frames):
     idx = random.choice(range(0, frames.shape[0]))
@@ -83,11 +91,10 @@ class MNISTMovingDataset(Dataset):  # pylint: disable=W0223
       frames = data['arr_0']
 
     batch_size = self._batch_size
-    sequences = self._init_sequences(batch_size, frames)
+    sequences, states = self._init_sequences(batch_size, frames)
+    sequence_offsets = np.zeros(batch_size, dtype=np.int32)
 
     self.num_frames = frames.shape[1]
-
-    sequence_offsets = np.zeros(batch_size, dtype=np.int32)
 
     def generator():
       """Generate frames from the dataset."""
@@ -103,29 +110,51 @@ class MNISTMovingDataset(Dataset):  # pylint: disable=W0223
           # Try to get a sample from sequence
           try:
             frame = sequences[b][i]
+            state = states[b][i]
           # Otherwise, generate a new sequence as this one has ended
           except IndexError:
-            # Generate a new sequence, or randomly sample from bank
-            sequence = self._get_sequence(frames)
+            sequence = self._get_sequence(training)
+            sequence_states = list(range(sequence.shape[0]))
 
             # Append this sequence to the sequences list
             sequences[b] = sequence
+            states[b] = sequence_states
 
             # Now try to get the sample again
             i = 0
             frame = sequences[b][i]
+            state = states[b][i]
 
           sequence_offsets[b] = i + 1
 
           # Normalize to [0, 1.0]
           frame = frame / 255.0
 
-          yield (frame, label, i)
+          end_state = False
+          if state == (sequences[b].shape[0] - 1):
+            end_state = True
 
-    dataset = tf.data.Dataset.from_generator(generator, output_types=(tf.float32, tf.int32, tf.int32),
+          yield (frame, label, state, end_state)
+
+    def preprocess(image, label, state, end_state):
+      padding_size = options['frame_padding_size']
+
+      if padding_size > 0:
+        pad_h = [padding_size] * 2
+        pad_w = [padding_size] * 2
+
+        paddings = [pad_h, pad_w, [0, 0]]
+        image = tf.pad(image, paddings,
+                       constant_values=options['frame_padding_value'])
+
+      return image, label, state, end_state
+
+    dataset = tf.data.Dataset.from_generator(generator, output_types=(tf.float32, tf.int32, tf.int32, tf.bool),
                                              output_shapes=(
                                                  tf.TensorShape([self.IMAGE_DIM, self.IMAGE_DIM, 1]),
                                                  tf.TensorShape([]),
+                                                 tf.TensorShape([]),
                                                  tf.TensorShape([])))
+    dataset = dataset.map(preprocess)
 
     return dataset

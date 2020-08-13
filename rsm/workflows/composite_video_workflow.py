@@ -29,22 +29,22 @@ class CompositeVideoWorkflow(CompositeWorkflow, VideoWorkflow):
   """A composite variant of the video workflow."""
 
   def _do_batch_after_hook(self, global_step, batch_type, fetched, feed_dict, data_subset):
-    if CompositeRSMStack.ae_name in self._component.get_sub_components().keys():
-      sub_components = self._component.get_sub_component(CompositeRSMStack.ae_name).get_sub_components()
+    if CompositeRSMStack.reducer_name in self._component.get_sub_components().keys():
+      sub_components = self._component.get_sub_component(CompositeRSMStack.reducer_name).get_sub_components()
 
       for i, (name, sub_component) in enumerate(sub_components.items()):
         # Skip the first layer; we already have its reconstruction
         if i == 0:
           continue
 
-        self._decoder(global_step, name, CompositeRSMStack.ae_name, sub_component.get_encoding(), feed_dict)
+        self._decoder(global_step, name, CompositeRSMStack.reducer_name, sub_component.get_encoding(), feed_dict)
 
-    if CompositeRSMStack.rsm_name in self._component.get_sub_components().keys():
+    if CompositeRSMStack.predictor_name in self._component.get_sub_components().keys():
       super()._do_batch_after_hook(global_step, batch_type, fetched, feed_dict, data_subset)
 
-      if CompositeRSMStack.ae_name in self._component.get_sub_components().keys():
+      if CompositeRSMStack.reducer_name in self._component.get_sub_components().keys():
         rsm_output = self.get_decoded_frame()
-        self._decoder(global_step, CompositeRSMStack.rsm_name, CompositeRSMStack.ae_name,
+        self._decoder(global_step, CompositeRSMStack.predictor_name, CompositeRSMStack.reducer_name,
                       rsm_output, feed_dict)
 
   def set_previous_frame(self, previous):
@@ -58,6 +58,6 @@ class CompositeVideoWorkflow(CompositeWorkflow, VideoWorkflow):
 
   def _get_status(self):
     """Return some string proxy for the losses or errors being optimized"""
-    if CompositeRSMStack.rsm_name in self._component.get_sub_components().keys():
+    if CompositeRSMStack.predictor_name in self._component.get_sub_components().keys():
       return self._component.get_sub_component('rsm_stack').get_loss()
     return 0.0
