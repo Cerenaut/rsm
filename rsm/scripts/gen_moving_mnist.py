@@ -18,6 +18,7 @@ from urllib.request import urlretrieve
 from PIL import Image
 
 import numpy as np
+import tqdm
 
 
 def arr_from_img(im, mean=0, std=1):
@@ -97,45 +98,49 @@ def generate_moving_mnist(training, shape=(64, 64), num_frames=30, num_images=10
   # Create a dataset of shape (num_images, num_frames, new_width, new_height)
   # Example: (10000, 20, 64, 64, 1)
   dataset = np.empty((num_images, num_frames, width, height, 1), dtype=np.uint8)
+  print('dataset shape =', dataset.shape)
 
-  for img_idx in range(num_images):
-    # Randomly generate direction, speed and velocity for both images
-    direcs = np.pi * (np.random.rand(nums_per_image) * 2 - 1)
-    speeds = np.random.randint(5, size=nums_per_image) + 2
-    veloc = np.asarray([(speed * math.cos(direc), speed * math.sin(direc)) for direc, speed in zip(direcs, speeds)])
-    # Get a list containing two PIL images randomly sampled from the database
-    mnist_images = [Image.fromarray(get_image_from_array(mnist, r, mean=0)).resize((original_size, original_size),
-                                                                                   Image.ANTIALIAS) \
-                    for r in np.random.randint(0, mnist.shape[0], nums_per_image)]
-    # Generate tuples of (x,y) i.e initial positions for nums_per_image (default : 2)
-    positions = np.asarray([(np.random.rand() * x_lim, np.random.rand() * y_lim) for _ in range(nums_per_image)])
+  with tqdm.tqdm(total=num_images) as image_pbar:
+    for img_idx in range(num_images):
+      # Randomly generate direction, speed and velocity for both images
+      direcs = np.pi * (np.random.rand(nums_per_image) * 2 - 1)
+      speeds = np.random.randint(5, size=nums_per_image) + 2
+      veloc = np.asarray([(speed * math.cos(direc), speed * math.sin(direc)) for direc, speed in zip(direcs, speeds)])
+      # Get a list containing two PIL images randomly sampled from the database
+      mnist_images = [Image.fromarray(get_image_from_array(mnist, r, mean=0)).resize((original_size, original_size),
+                                                                                    Image.ANTIALIAS) \
+                      for r in np.random.randint(0, mnist.shape[0], nums_per_image)]
+      # Generate tuples of (x,y) i.e initial positions for nums_per_image (default : 2)
+      positions = np.asarray([(np.random.rand() * x_lim, np.random.rand() * y_lim) for _ in range(nums_per_image)])
 
-    # Generate new frames for the entire num_framesgth
-    for frame_idx in range(num_frames):
-      canvases = [Image.new('L', (width, height)) for _ in range(nums_per_image)]
-      canvas = np.zeros((width, height, 1), dtype=np.float32)
+      # Generate new frames for the entire num_framesgth
+      for frame_idx in range(num_frames):
+        canvases = [Image.new('L', (width, height)) for _ in range(nums_per_image)]
+        canvas = np.zeros((width, height, 1), dtype=np.float32)
 
-      # In canv (i.e Image object) place the image at the respective positions
-      # Super impose both images on the canvas (i.e empty np array)
-      for i, canv in enumerate(canvases):
-        canv.paste(mnist_images[i], tuple(positions[i].astype(int)))
-        canvas += arr_from_img(canv, mean=0)
+        # In canv (i.e Image object) place the image at the respective positions
+        # Super impose both images on the canvas (i.e empty np array)
+        for i, canv in enumerate(canvases):
+          canv.paste(mnist_images[i], tuple(positions[i].astype(int)))
+          canvas += arr_from_img(canv, mean=0)
 
-      # Get the next position by adding velocity
-      next_pos = positions + veloc
+        # Get the next position by adding velocity
+        next_pos = positions + veloc
 
-      # Iterate over velocity and see if we hit the wall
-      # If we do then change the  (change direction)
-      for i, pos in enumerate(next_pos):
-        for j, coord in enumerate(pos):
-          if coord < -2 or coord > lims[j] + 2:
-            veloc[i] = list(list(veloc[i][:j]) + [-1 * veloc[i][j]] + list(veloc[i][j + 1:]))
+        # Iterate over velocity and see if we hit the wall
+        # If we do then change the  (change direction)
+        for i, pos in enumerate(next_pos):
+          for j, coord in enumerate(pos):
+            if coord < -2 or coord > lims[j] + 2:
+              veloc[i] = list(list(veloc[i][:j]) + [-1 * veloc[i][j]] + list(veloc[i][j + 1:]))
 
-      # Make the permanent change to position by adding updated velocity
-      positions = positions + veloc
+        # Make the permanent change to position by adding updated velocity
+        positions = positions + veloc
 
-      # Add the canvas to the dataset array
-      dataset[img_idx][frame_idx] = (canvas * 255).clip(0, 255).astype(np.uint8)
+        # Add the canvas to the dataset array
+        dataset[img_idx][frame_idx] = (canvas * 255).clip(0, 255).astype(np.uint8)
+
+      image_pbar.update(1)
 
   return dataset
 
@@ -171,4 +176,5 @@ if __name__ == '__main__':
   parser.add_argument('--nums_per_image', type=int, dest='nums_per_image',
                       default=2)  # number of digits in each frame
   args = parser.parse_args(sys.argv[1:])
+  print('args =', args)
   main(**{k: v for (k, v) in vars(args).items() if v is not None})
