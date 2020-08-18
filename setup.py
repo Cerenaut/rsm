@@ -21,9 +21,9 @@ from setuptools.dist import Distribution
 
 install_requires = [
     'pagi >= 0.1.0',
-    'opencv-python',
-    'h5py',
-    'tqdm'
+    'opencv-python == 3.4.3.18',
+    'h5py == 2.8.0',
+    'tqdm == 4.31.1'
 ]
 
 class BinaryDistribution(Distribution):

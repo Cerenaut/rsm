@@ -19,7 +19,7 @@
       "gan_rsm_input": "decoding",
 
       "rsm_stack_num_layers": 2,
-      "rsm_stack_batch_size": 64,
+      "rsm_stack_batch_size": 100,
       "rsm_stack_loss_type": "mse",
       "rsm_stack_connectivity": "bi",
       "rsm_stack_memory_training_interval": [0, -1],
