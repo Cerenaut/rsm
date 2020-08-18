@@ -219,7 +219,17 @@ class VideoWorkflow(ImageSequenceWorkflow):
   all_mse_gan = []
   all_mse_rsm = []
   all_mse_prev = []
+
+  all_bce_gan = []
+  all_bce_rsm = []
+  all_bce_prev = []
+
   previous_frame = None
+
+  def _cross_entropy_loss(self, z, y, eps=1e-9):
+    loss = z * np.log(y + eps) + (1 - z) * np.log((1 - y) + eps)
+    loss = -np.sum(loss) / self._hparams.batch_size
+    return loss
 
   def _do_batch_after_hook(self, global_step, batch_type, fetched, feed_dict, data_subset):
     """Things to do after a batch is completed."""
@@ -275,13 +285,25 @@ class VideoWorkflow(ImageSequenceWorkflow):
       mse_rsm = ((A - D)**2).mean(axis=None)
       mse_prev = ((A - C)**2).mean(axis=None)
 
+      bce_gan = self._cross_entropy_loss(A, B)
+      bce_rsm = self._cross_entropy_loss(A, D)
+      bce_prev = self._cross_entropy_loss(A, C)
+
       self.all_mse_gan.append(mse_gan * num_features)
       self.all_mse_rsm.append(mse_rsm * num_features)
       self.all_mse_prev.append(mse_prev * num_features)
 
+      self.all_bce_gan.append(bce_gan)
+      self.all_bce_rsm.append(bce_rsm)
+      self.all_bce_prev.append(bce_prev)
+
       avg_mse_gan = np.average(self.all_mse_gan)
       avg_mse_rsm = np.average(self.all_mse_rsm)
       avg_mse_prev = np.average(self.all_mse_prev)
+
+      avg_bce_gan = np.average(self.all_bce_gan)
+      avg_bce_rsm = np.average(self.all_bce_rsm)
+      avg_bce_prev = np.average(self.all_bce_prev)
 
       # Write summaries
       summary = tf.Summary()
@@ -297,6 +319,20 @@ class VideoWorkflow(ImageSequenceWorkflow):
                         simple_value=avg_mse_rsm)
       summary.value.add(tag=self._component.name + '/summaries/' + batch_type + '/avg_mse_prev',
                         simple_value=avg_mse_prev)
+
+      summary.value.add(tag=self._component.name + '/summaries/' + batch_type + '/bce_gan',
+                        simple_value=bce_gan)
+      summary.value.add(tag=self._component.name + '/summaries/' + batch_type + '/bce_rsm',
+                        simple_value=bce_rsm)
+      summary.value.add(tag=self._component.name + '/summaries/' + batch_type + '/bce_prev',
+                        simple_value=bce_prev)
+      summary.value.add(tag=self._component.name + '/summaries/' + batch_type + '/avg_bce_gan',
+                        simple_value=avg_bce_gan)
+      summary.value.add(tag=self._component.name + '/summaries/' + batch_type + '/avg_bce_rsm',
+                        simple_value=avg_bce_rsm)
+      summary.value.add(tag=self._component.name + '/summaries/' + batch_type + '/avg_bce_prev',
+                        simple_value=avg_bce_prev)
+
       self._writer.add_summary(summary, global_step)
       self._writer.flush()
 
