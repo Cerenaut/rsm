@@ -574,7 +574,7 @@ class SequenceMemoryStack(SummaryComponent):
       layer_hparams.decode_nonlinearity = get_layer_param(self._hparams.decode_nonlinearity, i)
 
       layer_hparams.boost_factor = get_layer_param(self._hparams.boost_factor, i)
-      layer_hparams.boost_factor_decay =get_layer_param( self._hparams.boost_factor_decay, i)
+      layer_hparams.boost_factor_decay = get_layer_param( self._hparams.boost_factor_decay, i)
       layer_hparams.boost_factor_update_interval = get_layer_param(self._hparams.boost_factor_update_interval, i)
 
       layer_hparams.inhibition_decay = get_layer_param(self._hparams.inhibition_decay, i)

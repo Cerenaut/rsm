@@ -35,10 +35,10 @@ class MNISTMovingInfiniteDataset(MNISTMovingDataset):  # pylint: disable=W0223
   MNIST_DIM = 28
 
   # Big
-  #DIGIT_DIM = 28
-  #IMAGE_DIM = 64
-  #SPEED_RNG = 5
-  #SPEED_MIN = 2
+  # DIGIT_DIM = 28
+  # IMAGE_DIM = 64
+  # SPEED_RNG = 5
+  # SPEED_MIN = 2
 
   # Small
   DIGIT_DIM = 14
@@ -142,7 +142,10 @@ class MNISTMovingInfiniteDataset(MNISTMovingDataset):  # pylint: disable=W0223
       sequence = self._get_sequence(training)
       sequence_states = list(range(sequence.shape[0]))
 
-      offset = i % len(sequence)
+      offset = 0
+      if training:
+        offset = i % len(sequence)
+
       sequence = sequence[offset:]
       sequence_states = sequence_states[offset:]
       sequences.append(sequence)
@@ -151,7 +154,7 @@ class MNISTMovingInfiniteDataset(MNISTMovingDataset):  # pylint: disable=W0223
 
   def _get_sequence(self, training):  # pylint: disable=arguments-differ
     """Sample a sequence from the training or test set."""
-    if training:
+    if training or self.IMAGE_DIM != 64:
       sequence = self._get_train_sequence()
     else:
       sequence = self._get_test_sequence()
@@ -239,8 +242,12 @@ class MNISTMovingInfiniteDataset(MNISTMovingDataset):  # pylint: disable=W0223
     if training:
       self._images = self._load_mnist_dataset(training)
     else:
-      self._frames = self._load_moving_mnist_dataset()
-      self._next_idx = 0
+      if self.IMAGE_DIM == 64:
+        self._frames = self._load_moving_mnist_dataset()
+        self._next_idx = 0
+      else:
+        self._images = self._load_mnist_dataset(training=False)
+
 
     # Initialise sequences
     batch_size = self._batch_size
@@ -287,9 +294,9 @@ class MNISTMovingInfiniteDataset(MNISTMovingDataset):  # pylint: disable=W0223
           if state == (sequences[b].shape[0] - 1):
             end_state = True
 
-          yield (frame, label, end_state)
+          yield (frame, label, state, end_state)
 
-    def preprocess(image, label, state):
+    def preprocess(image, label, state, end_state):
       padding_size = options['frame_padding_size']
 
       if padding_size > 0:
@@ -300,11 +307,12 @@ class MNISTMovingInfiniteDataset(MNISTMovingDataset):  # pylint: disable=W0223
         image = tf.pad(image, paddings,
                        constant_values=options['frame_padding_value'])
 
-      return image, label, state
+      return image, label, state, end_state
 
-    dataset = tf.data.Dataset.from_generator(generator, output_types=(tf.float32, tf.int32, tf.bool),
+    dataset = tf.data.Dataset.from_generator(generator, output_types=(tf.float32, tf.int32, tf.int32, tf.bool),
                                              output_shapes=(
                                                  tf.TensorShape([self.IMAGE_DIM, self.IMAGE_DIM, 1]),
+                                                 tf.TensorShape([]),
                                                  tf.TensorShape([]),
                                                  tf.TensorShape([])))
     dataset = dataset.map(preprocess)

@@ -46,13 +46,11 @@ class MNISTMovingDataset(Dataset):  # pylint: disable=W0223
 
   def get_train(self, preprocess=False, options=None):  # pylint: disable=W0221
     """tf.data.Dataset object for MNIST training data."""
-    del options
-    return self._dataset(self._directory, 'train-120k.npz', preprocess)
+    return self._dataset(self._directory, 'train-120k.npz', preprocess, training=True, options=options)
 
   def get_test(self, preprocess=False, options=None):  # pylint: disable=W0221
     """tf.data.Dataset object for MNIST test data."""
-    del options
-    return self._dataset(self._directory, 'test-10k.npz', preprocess)
+    return self._dataset(self._directory, 'test-10k.npz', preprocess, training=False, options=options)
 
   def set_batch_size(self, batch_size):
     self._batch_size = batch_size
@@ -76,11 +74,13 @@ class MNISTMovingDataset(Dataset):  # pylint: disable=W0223
       states.append(sequence_states)
     return sequences, states
 
-  def _get_sequence(self, frames):
-    idx = random.choice(range(0, frames.shape[0]))
-    return frames[idx]
+  def _get_sequence(self, training):
+    del training
+    sequence = self._frames[self._next_idx]
+    self._next_idx = (self._next_idx + 1) % self._frames.shape[0]
+    return sequence
 
-  def _dataset(self, directory, filename, preprocess):
+  def _dataset(self, directory, filename, preprocess, training, options=None):
     """Download and parse the dataset."""
     del preprocess
 
@@ -88,13 +88,18 @@ class MNISTMovingDataset(Dataset):  # pylint: disable=W0223
     filepath = os.path.join(dirpath, filename)
 
     with np.load(filepath) as data:
-      frames = data['arr_0']
+      self._frames = data['arr_0']
+      self._next_idx = 0
 
     batch_size = self._batch_size
-    sequences, states = self._init_sequences(batch_size, frames)
+    sequences, states = self._init_sequences(training, batch_size)
     sequence_offsets = np.zeros(batch_size, dtype=np.int32)
 
-    self.num_frames = frames.shape[1]
+    self.num_frames = self._frames.shape[1]
+
+    # Compute (potentially) padded image dimensions
+    image_dim = self.IMAGE_DIM + (options['frame_padding_size'] * 2)
+    self._dataset_shape = [-1, image_dim, image_dim, 1]
 
     def generator():
       """Generate frames from the dataset."""
