@@ -574,7 +574,7 @@ class SequenceMemoryStack(SummaryComponent):
       layer_hparams.decode_nonlinearity = get_layer_param(self._hparams.decode_nonlinearity, i)
 
       layer_hparams.boost_factor = get_layer_param(self._hparams.boost_factor, i)
-      layer_hparams.boost_factor_decay = get_layer_param( self._hparams.boost_factor_decay, i)
+      layer_hparams.boost_factor_decay = get_layer_param(self._hparams.boost_factor_decay, i)
       layer_hparams.boost_factor_update_interval = get_layer_param(self._hparams.boost_factor_update_interval, i)
 
       layer_hparams.inhibition_decay = get_layer_param(self._hparams.inhibition_decay, i)
@@ -592,7 +592,7 @@ class SequenceMemoryStack(SummaryComponent):
 
       layer_hparams.rb_keep_rate = get_layer_param(self._hparams.rb_keep_rate, i)
       layer_hparams.rb_decay_rate = get_layer_param(self._hparams.rb_decay_rate, i)
-      layer_hparams.rb_decay_floor = self._hparams.rb_decay_floor
+      layer_hparams.rb_decay_floor = get_layer_param(self._hparams.rb_decay_floor, i)
       layer_hparams.rb_norm_type = get_layer_param(self._hparams.rb_norm_type, i)
       layer_hparams.rb_norm_eps = get_layer_param(self._hparams.rb_norm_eps, i)
       layer_hparams.rb_decay_trainable = get_layer_param(self._hparams.rb_decay_trainable, i)
