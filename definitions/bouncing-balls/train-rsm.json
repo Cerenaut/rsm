@@ -3,7 +3,7 @@
     "workflow": "rsm.workflows.composite_gan_video_workflow",
     "dataset": "rsm.datasets.bouncing_balls_dataset",
     "component": "rsm.components.composite_rsm_stack",
-    "batches": 10000,
+    "batches": 200000,
 
 
 
@@ -80,30 +80,7 @@
       "rsm_stack_f_bias_init_type":["zero", "zero"],
       "rsm_stack_r_bias_init_type":["zero", "zero"],
       "rsm_stack_b_bias_init_type":["zero", "zero"],
-      "rsm_stack_d_bias_init_type":["zero", "zero"],
-
-
-      "gan_batch_size": 256,
-      "gan_generator_num_layers": 3,
-      "gan_generator_filters": [64, 128, 256],
-      "gan_generator_filters_field_width": [5, 5, 5],
-      "gan_generator_filters_field_height": [5, 5, 5],
-      "gan_generator_filters_field_stride": [1, 2, 1],
-      "gan_generator_nonlinearity": ["leaky_relu", "leaky_relu", "leaky_relu"],
-      "gan_generator_loss_mse_lambda": 1.0,
-      "gan_generator_loss_adv_lambda": 0.0002,
-      "gan_generator_learning_rate": 0.0005,
-      "gan_generator_output_nonlinearity": "sigmoid",
-      "gan_generator_autoencoder": "both",
-      "gan_discriminator_num_layers": 1,
-      "gan_discriminator_filters": [128],
-      "gan_discriminator_filters_field_width": [34],
-      "gan_discriminator_filters_field_height": [34],
-      "gan_discriminator_filters_field_stride": [34],
-      "gan_discriminator_nonlinearity": ["leaky_relu"],
-      "gan_discriminator_learning_rate": 0.0005,
-      "gan_discriminator_output_nonlinearity": "sigmoid",
-      "gan_discriminator_input_noise": true
+      "rsm_stack_d_bias_init_type":["zero", "zero"]
     }
   },
   "export-options": {
