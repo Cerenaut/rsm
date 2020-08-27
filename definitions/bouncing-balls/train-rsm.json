@@ -57,10 +57,10 @@
       "rsm_stack_filters_field_stride": [2, 2],
       "rsm_stack_pool_size": [2, 1],
 
-      "rsm_stack_f_l2": [0.0001, 0.0001],
-      "rsm_stack_r_l2": [0.0001, 0.0001],
-      "rsm_stack_b_l2": [0.0001, 0.0001],
-      "rsm_stack_d_l2": [0.0001, 0.0001],
+      "rsm_stack_f_l2": [0.0, 0.0],
+      "rsm_stack_r_l2": [0.0, 0.0],
+      "rsm_stack_b_l2": [0.0, 0.0],
+      "rsm_stack_d_l2": [0.0, 0.0],
 
       "rsm_stack_f_init_type":["truncated_normal", "truncated_normal"],
       "rsm_stack_r_init_type":["truncated_normal", "truncated_normal"],
@@ -72,7 +72,7 @@
       "rsm_stack_b_init_sd": [0.03, 0.03],
       "rsm_stack_d_init_sd": [0.03, 0.03],
 
-      "rsm_stack_f_bias":[true, true],
+      "rsm_stack_f_bias":[false, false],
       "rsm_stack_r_bias":[false, false],
       "rsm_stack_b_bias":[false, false],
       "rsm_stack_d_bias":[true, true],

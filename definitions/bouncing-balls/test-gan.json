@@ -3,22 +3,22 @@
     "workflow": "rsm.workflows.composite_gan_video_workflow",
     "dataset": "rsm.datasets.bouncing_balls_dataset",
     "component": "rsm.components.composite_rsm_stack",
-    "batches": 50000,
+    "batches": 200000,
 
-    "checkpoint": "/home/incubator/agief-remote-run/rsm/run/summaries_20191115-141045/model.ckpt-50000",
+    "checkpoint": "/home/incubator/agief-remote-run/rsm/run/summaries_20200821-115341/model.ckpt-200000",
 
 
 
     "hparams_override": {
-      "batch_size": 200,
+      "batch_size": 100,
       "build_ae": false,
       "build_rsm": true,
-      "build_gan": true,
+      "build_gan": false,
 
       "gan_rsm_input": "decoding",
 
       "rsm_stack_num_layers": 2,
-      "rsm_stack_batch_size": 200,
+      "rsm_stack_batch_size": 100,
       "rsm_stack_loss_type": "mse",
       "rsm_stack_connectivity": "bi",
       "rsm_stack_memory_training_interval": [0, -1],
@@ -57,10 +57,10 @@
       "rsm_stack_filters_field_stride": [2, 2],
       "rsm_stack_pool_size": [2, 1],
 
-      "rsm_stack_f_l2": [0.0001, 0.0001],
-      "rsm_stack_r_l2": [0.0001, 0.0001],
-      "rsm_stack_b_l2": [0.0001, 0.0001],
-      "rsm_stack_d_l2": [0.0001, 0.0001],
+      "rsm_stack_f_l2": [0.0, 0.0],
+      "rsm_stack_r_l2": [0.0, 0.0],
+      "rsm_stack_b_l2": [0.0, 0.0],
+      "rsm_stack_d_l2": [0.0, 0.0],
 
       "rsm_stack_f_init_type":["truncated_normal", "truncated_normal"],
       "rsm_stack_r_init_type":["truncated_normal", "truncated_normal"],
@@ -72,7 +72,7 @@
       "rsm_stack_b_init_sd": [0.03, 0.03],
       "rsm_stack_d_init_sd": [0.03, 0.03],
 
-      "rsm_stack_f_bias":[true, true],
+      "rsm_stack_f_bias":[false, false],
       "rsm_stack_r_bias":[false, false],
       "rsm_stack_b_bias":[false, false],
       "rsm_stack_d_bias":[true, true],
@@ -80,31 +80,7 @@
       "rsm_stack_f_bias_init_type":["zero", "zero"],
       "rsm_stack_r_bias_init_type":["zero", "zero"],
       "rsm_stack_b_bias_init_type":["zero", "zero"],
-      "rsm_stack_d_bias_init_type":["zero", "zero"],
-
-
-      "gan_batch_size": 200,
-      "gan_summarize_tensors": true,
-      "gan_generator_num_layers": 3,
-      "gan_generator_filters": [64, 128, 256],
-      "gan_generator_filters_field_width": [5, 5, 5],
-      "gan_generator_filters_field_height": [5, 5, 5],
-      "gan_generator_filters_field_stride": [1, 2, 1],
-      "gan_generator_nonlinearity": ["leaky_relu", "leaky_relu", "leaky_relu"],
-      "gan_generator_loss_mse_lambda": 1.0,
-      "gan_generator_loss_adv_lambda": 0.0002,
-      "gan_generator_learning_rate": 0.0005,
-      "gan_generator_output_nonlinearity": "sigmoid",
-      "gan_generator_autoencoder": "both",
-      "gan_discriminator_num_layers": 1,
-      "gan_discriminator_filters": [128],
-      "gan_discriminator_filters_field_width": [34],
-      "gan_discriminator_filters_field_height": [34],
-      "gan_discriminator_filters_field_stride": [34],
-      "gan_discriminator_nonlinearity": ["leaky_relu"],
-      "gan_discriminator_learning_rate": 0.0005,
-      "gan_discriminator_output_nonlinearity": "sigmoid",
-      "gan_discriminator_input_noise": true
+      "rsm_stack_d_bias_init_type":["zero", "zero"]
     }
   },
   "export-options": {
@@ -118,13 +94,13 @@
     "pretrain_steps": 0,
 
     "prime": true,
-    "prime_num_frames": 100,
+    "prime_num_frames": 50,
 
-    "num_testing_batches": 100,
+    "num_testing_batches": 400,
     "testing_progress_interval": 10,
 
     "frame_padding_size": 2,
     "frame_padding_value": 0.5,
-    "frame_output": "gan"
+    "frame_output": "rsm"
   }
 }
