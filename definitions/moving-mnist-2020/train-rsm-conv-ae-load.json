@@ -1,14 +1,17 @@
 {
   "experiment-options": {
+    "checkpoint": "./ckpt/summaries_20200831-113715/model.ckpt-1000",
+    "checkpoint_load_scope": "composite-rsm-stack/ae_stack",
+    "checkpoint_frozen_scope": "composite-rsm-stack/ae_stack",
     "workflow": "rsm.workflows.composite_gan_video_workflow",
     "dataset": "rsm.datasets.mnist_moving_infinite_dataset",
     "component": "rsm.components.composite_rsm_stack",
-    "batches": 1000,
+    "batches": 20000,
 
     "hparams_override": {
       "batch_size": 256,
       "build_ae": true,
-      "build_rsm": false,
+      "build_rsm": true,
       "build_gan": false,
 
       "gan_rsm_input": "decoding",
@@ -17,7 +20,6 @@
       "ae_stack_num_layers": 1,
       "ae_stack_sum_norm": [-1],
       "ae_stack_secondary": [true],
-      "ae_stack_summarize_encoding": [true],
       "ae_stack_summarize_decoding": [true],
 
       "ae_stack_encoder_nonlinearity": ["tanh"],
@@ -48,8 +50,8 @@
       "rsm_stack_hidden_nonlinearity": "none",
       "rsm_stack_decode_nonlinearity": ["tanh"],
       "rsm_stack_decode_mode": ["fc"],
-      "rsm_stack_sparsity": [20],
-      "rsm_stack_cols": [2000],
+      "rsm_stack_sparsity": [25],
+      "rsm_stack_cols": [1000],
       "rsm_stack_cells_per_col": [1],
 
       "rsm_stack_freq_min": 0.01,
@@ -64,14 +66,14 @@
       "rsm_stack_f_keep_rate": [1.0],
       "rsm_stack_f_decay_rate": [0.0],
       "rsm_stack_rb_decay_rate": [0.8],
-      "rsm_stack_rb_keep_rate": [0.5],
+      "rsm_stack_rb_keep_rate": [1.0],
       "rsm_stack_hidden_keep_rate": [1.0],
       "rsm_stack_rb_norm_type": ["sum"],
 
-      "rsm_stack_filters_field_width": [32],
-      "rsm_stack_filters_field_height": [32],
-      "rsm_stack_filters_field_stride": [32],
-      "rsm_stack_pool_size": [2,1],
+      "rsm_stack_filters_field_width": [18],
+      "rsm_stack_filters_field_height": [18],
+      "rsm_stack_filters_field_stride": [18],
+      "rsm_stack_pool_size": [1,1],
 
       "rsm_stack_f_l2": [0.0, 0.0],
       "rsm_stack_r_l2": [0.0, 0.0],
