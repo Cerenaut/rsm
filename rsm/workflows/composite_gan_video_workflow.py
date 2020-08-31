@@ -75,6 +75,8 @@ class CompositeGANVideoWorkflow(CompositeGANWorkflow, CompositeVideoWorkflow):
     if self._opts['frame_output'] == 'rsm':
       rsm_output = self._component.get_sub_component('rsm_stack').get_layer(0).get_values(SequenceMemoryLayer.decoding)
       decoded_frame = rsm_output
+    elif self._opts['frame_output'] == 'ae':
+      decoded_frame = self._component.get_sub_component('ae_stack').get_decoding()
     elif self._opts['frame_output'] == 'gan':
       gan_output = self._component.get_sub_component('gan').get_output()
       decoded_frame = gan_output
