@@ -141,7 +141,8 @@ class VideoWorkflow(ImageSequenceWorkflow):
       if end_state:  # Reached end of sequence
         history_mask[b] = 0.0
 
-    self._component.update_history(self._session, history_mask)
+    clear_previous = True
+    self._component.update_history(self._session, history_mask, clear_previous)
 
   def training_step(self, dataset_handle, global_step, phase_change=None):  # pylint: disable=arguments-differ
     """The training procedure within the batch loop"""
@@ -343,6 +344,7 @@ class VideoWorkflow(ImageSequenceWorkflow):
     self._component.update_statistics(batch_type, self._session)
 
     # Resets the history at end of a sequence
+    #print('after batch #', global_step)
     self._compute_end_state_mask(self._end_states_vals)
 
   def frames_to_video(self, input_frames, filename=None):

@@ -273,6 +273,7 @@ class MNISTMovingInfiniteDataset(MNISTMovingDataset):  # pylint: disable=W0223
           try:
             frame = sequences[b][i]
             state = states[b][i]
+
           # Otherwise, generate a new sequence as this one has ended
           except IndexError:
             # Generate a new sequence, or randomly sample from bank
@@ -290,9 +291,17 @@ class MNISTMovingInfiniteDataset(MNISTMovingDataset):  # pylint: disable=W0223
 
           sequence_offsets[b] = i + 1
 
+          seq_length = sequences[b].shape[0]
           end_state = False
-          if state == (sequences[b].shape[0] - 1):
+          if i == (seq_length -1):
             end_state = True
+          # end_state = False
+          # if new_sequence is True:
+          #   end_state = True
+          # if state == (sequences[b].shape[0] - 1):
+          #   end_state = True
+          # if state == 0:
+          #   end_state = True
 
           yield (frame, label, state, end_state)
 
