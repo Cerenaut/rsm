@@ -30,6 +30,7 @@ import matplotlib.animation as animation
 
 from rsm.workflows.image_sequence_workflow import ImageSequenceWorkflow
 
+from rsm.components.composite_rsm_stack import CompositeRSMStack
 from rsm.components.sequence_memory_stack import SequenceMemoryStack
 from rsm.components.sequence_memory_layer import SequenceMemoryLayer
 
@@ -185,7 +186,8 @@ class VideoWorkflow(ImageSequenceWorkflow):
   def set_previous_frame(self, previous):
     self._component.get_layer(0).get_dual().set_values('previous', previous)
 
-  def get_decoded_frame(self):
+  def get_decoded_frame(self, feed_dict=None):
+    del feed_dict
     return self._component.get_layer(0).get_values(SequenceMemoryLayer.decoding)
 
   def get_previous_frame(self):
@@ -234,11 +236,15 @@ class VideoWorkflow(ImageSequenceWorkflow):
 
   def _do_batch_after_hook(self, global_step, batch_type, fetched, feed_dict, data_subset):
     """Things to do after a batch is completed."""
-    del feed_dict, fetched
+    del fetched
 
     # Test-time conditions
     if batch_type == 'encoding' and data_subset == 'test':
-      decoding = self.get_decoded_frame()
+      if self._opts['frame_output'] == 'rsm' and (
+          CompositeRSMStack.reducer_name in self._component.get_sub_components().keys()):
+        decoding = self.get_decoded_frame_via_ae(feed_dict)
+      else:
+        decoding = self.get_decoded_frame()
 
       # Prime the model using the first N frames of a sequence
       if self._opts['prime']:
@@ -265,7 +271,8 @@ class VideoWorkflow(ImageSequenceWorkflow):
       A = self._inputs_vals
       B = decoding
       C = self.previous_frame
-      D = self._component.get_gan_inputs()
+      D = self._component.get_gan_inputs(feed_dict)
+      D = decoding
 
       # Reverse the padding
       padding_size = self._opts['frame_padding_size']
@@ -437,7 +444,8 @@ class VideoWorkflow(ImageSequenceWorkflow):
     if clear_before_test:
       logging.info('Clearing memory history before testing set...')
       history_mask = np.zeros(self._hparams.batch_size) # Clear all
-      self._component.update_history(self._session, history_mask)
+      clear_previous = True
+      self._component.update_history(self._session, history_mask, clear_previous)
 
     # Apply a fixed number of test batches. Might take time to warm up and dataset repeats.
     # We can pick an interval from the results later

@@ -22,6 +22,7 @@ from __future__ import print_function
 import numpy as np
 import tensorflow as tf
 
+from rsm.components.composite_rsm_stack import CompositeRSMStack
 from rsm.components.sequence_memory_layer import SequenceMemoryLayer
 from rsm.workflows.composite_video_workflow import CompositeVideoWorkflow
 from rsm.workflows.composite_gan_workflow import CompositeGANWorkflow
@@ -71,15 +72,24 @@ class CompositeGANVideoWorkflow(CompositeGANWorkflow, CompositeVideoWorkflow):
 
     return fetches, feed_dict, fetched
 
+  def get_decoded_frame_via_ae(self, feed_dict):
+    rsm_layer = self._component.get_sub_component(CompositeRSMStack.predictor_name).get_layer(0)
+    rsm_output = rsm_layer.get_values(SequenceMemoryLayer.decoding)
+
+    decoded_frame = self._decoder(0, CompositeRSMStack.predictor_name, CompositeRSMStack.reducer_name,
+                                  rsm_output, feed_dict=feed_dict, summarise=False)
+    return decoded_frame
+
   def get_decoded_frame(self):
     if self._opts['frame_output'] == 'rsm':
-      rsm_output = self._component.get_sub_component('rsm_stack').get_layer(0).get_values(SequenceMemoryLayer.decoding)
-      decoded_frame = rsm_output
+      rsm_layer = self._component.get_sub_component(CompositeRSMStack.predictor_name).get_layer(0)
+      decoded_frame = rsm_layer.get_values(SequenceMemoryLayer.decoding)
+
     elif self._opts['frame_output'] == 'ae':
-      decoded_frame = self._component.get_sub_component('ae_stack').get_decoding()
+      decoded_frame = self._component.get_sub_component(CompositeRSMStack.reducer_name).get_decoding()
+
     elif self._opts['frame_output'] == 'gan':
-      gan_output = self._component.get_sub_component('gan').get_output()
-      decoded_frame = gan_output
+      decoded_frame = self._component.get_sub_component(CompositeRSMStack.sampler_name).get_output()
 
     # decoded_frame = (decoded_frame - np.min(decoded_frame)) / (np.max(decoded_frame) - np.min(decoded_frame))
 

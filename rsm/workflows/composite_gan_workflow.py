@@ -43,7 +43,7 @@ class CompositeGANWorkflow(CompositeWorkflow):
         self._placeholders['dataset_handle']: dataset_handle
     }
 
-  def _do_gan_batch(self, batch_type, fetched, data_subset, global_step):
+  def _do_gan_batch(self, batch_type, fetched, data_subset, global_step, prior_feed_dict):
     """Perform a discriminator step, followed by generator step."""
     if not self._hparams.build_gan:
       return
@@ -71,7 +71,7 @@ class CompositeGANWorkflow(CompositeWorkflow):
 
       real_inputs = fetched['inputs']
       # real_inputs = 2 * real_inputs - 1  # Normalize to [-1, 1]
-      gen_inputs = self._component.get_gan_inputs()
+      gen_inputs = self._component.get_gan_inputs(prior_feed_dict)
 
       fetches, feed_dict = build_feed_dict(gen_inputs, real_inputs)
       disc_batch_type = self._component.sampler_name + '-discriminator_' + gan_batch_type
@@ -99,7 +99,7 @@ class CompositeGANWorkflow(CompositeWorkflow):
     if self._freeze_training:
       batch_type = self._setup_train_batch_types()
 
-    self._do_gan_batch(batch_type, fetched, data_subset, global_step)
+    self._do_gan_batch(batch_type, fetched, data_subset, global_step, feed_dict)
 
     return batch_type, fetched, feed_dict, data_subset
 
@@ -113,7 +113,7 @@ class CompositeGANWorkflow(CompositeWorkflow):
     feed_dict = self._build_prior_feed_dict(dataset_handle)
     _, _, fetched = self._do_batch(fetches, feed_dict, batch_type, data_subset, global_step)
 
-    self._do_gan_batch(batch_type, fetched, data_subset, global_step)
+    self._do_gan_batch(batch_type, fetched, data_subset, global_step, feed_dict)
 
     return batch_type, fetched, feed_dict, data_subset
 

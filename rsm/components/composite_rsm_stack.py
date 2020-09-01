@@ -180,12 +180,21 @@ class CompositeRSMStack(CompositeComponent):
 
     return input_values_next, input_shape_next
 
-  def get_gan_inputs(self):  # TODO rename to get_sampler_input
+  def get_gan_inputs(self, feed_dict=None):  # TODO rename to get_sampler_input
     """Finds the input data (off-graph) used as input for the GAN"""
     if self._hparams.build_rsm:  # If the RSM exists, use that:
+      rsm_layer = self.get_sub_component(CompositeRSMStack.predictor_name).get_layer(0)
+
+      if self._hparams.build_ae and self._hparams.gan_rsm_input == 'decoding_ae':
+        rsm_output = rsm_layer.get_values(SequenceMemoryLayer.decoding)
+
+        return self._decoder(0, CompositeRSMStack.predictor_name, CompositeRSMStack.reducer_name,
+                             rsm_output, feed_dict, summarise=False)
+
       if self._hparams.gan_rsm_input == 'decoding':
-        return self.get_sub_component(CompositeRSMStack.predictor_name).get_layer(0).get_values(SequenceMemoryLayer.decoding)
-      return self.get_sub_component(CompositeRSMStack.predictor_name).get_layer(0).get_values(SequenceMemoryLayer.encoding)
+        return rsm_layer.get_values(SequenceMemoryLayer.decoding)
+
+      return rsm_layer.get_values(SequenceMemoryLayer.encoding)
 
     # Else, RSM doesn't exist, look for AE:
     if self._hparams.build_ae:
