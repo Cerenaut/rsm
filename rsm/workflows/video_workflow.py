@@ -63,6 +63,7 @@ class VideoWorkflow(ImageSequenceWorkflow):
         clear_before_test=True,
         frame_padding_size=0,
         frame_padding_value=0.0,
+        allowed_classes=[0, 1, 2, 3, 4, 5, 6, 7, 8, 9],
         profile_file=None
     )
 

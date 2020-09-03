@@ -91,15 +91,18 @@ class MNISTMovingInfiniteDataset(MNISTMovingDataset):  # pylint: disable=W0223
       ret = ret.reshape(h, w)
     return ret
 
-  def _load_mnist_dataset(self, training=True):
+  def _load_mnist_dataset(self, training=True, options=None):
     """Download the MNIST dataset and load it into a NumPy array."""
     if training:
       filename = 'train-images-idx3-ubyte.gz'
+      labels_filename = 'train-labels-idx1-ubyte.gz'
     else:
       filename = 't10k-images-idx3-ubyte.gz'
+      labels_filename = 't10k-labels-idx1-ubyte.gz'
 
     dirpath = os.path.join(self._directory, self._name)
     filepath = os.path.join(dirpath, filename)
+    labels_filepath = os.path.join(dirpath, labels_filename)
     source = 'http://yann.lecun.com/exdb/mnist/'
 
     if not tf.gfile.Exists(dirpath):
@@ -108,9 +111,24 @@ class MNISTMovingInfiniteDataset(MNISTMovingDataset):  # pylint: disable=W0223
     if not os.path.exists(filepath):
       urlretrieve(source + filename, filepath)
 
+    if not os.path.exists(labels_filepath):
+      urlretrieve(source + labels_filename, labels_filepath)
+
     with gzip.open(filepath, 'rb') as f:
       data = np.frombuffer(f.read(), np.uint8, offset=16)
     data = data.reshape(-1, self.MNIST_DIM, self.MNIST_DIM, 1)
+
+    with gzip.open(labels_filepath, 'rb') as f:
+      labels = np.frombuffer(f.read(), np.uint8, offset=8)
+
+    if options is not None and options['allowed_classes']:
+      print('Allowed Classes =', options['allowed_classes'])
+      allowed_idxs = np.isin(labels, options['allowed_classes'])
+
+      data = data[allowed_idxs]
+      labels = labels[allowed_idxs]
+
+    assert data.shape[0] == labels.shape[0]
 
     return data / np.float32(255)
 
@@ -240,14 +258,13 @@ class MNISTMovingInfiniteDataset(MNISTMovingDataset):  # pylint: disable=W0223
 
     # Load MNIST images into memory
     if training:
-      self._images = self._load_mnist_dataset(training)
+      self._images = self._load_mnist_dataset(training, options)
     else:
       if self.IMAGE_DIM == 64:
         self._frames = self._load_moving_mnist_dataset()
         self._next_idx = 0
       else:
-        self._images = self._load_mnist_dataset(training=False)
-
+        self._images = self._load_mnist_dataset(training, options)
 
     # Initialise sequences
     batch_size = self._batch_size
