@@ -272,7 +272,9 @@ class MNISTMovingInfiniteDataset(MNISTMovingDataset):  # pylint: disable=W0223
     sequence_offsets = np.zeros(batch_size, dtype=np.int32)
 
     # Compute (potentially) padded image dimensions
-    image_dim = self.IMAGE_DIM + (options['frame_padding_size'] * 2)
+    image_dim = image_dim = self.IMAGE_DIM
+    if options['frame_padding_size'] > 0:
+      image_dim += (options['frame_padding_size'] * 2)
     self._dataset_shape = [-1, image_dim, image_dim, 1]
 
     def generator():
@@ -324,6 +326,15 @@ class MNISTMovingInfiniteDataset(MNISTMovingDataset):  # pylint: disable=W0223
 
     def preprocess(image, label, state, end_state):
       padding_size = options['frame_padding_size']
+
+      image_shape = image.get_shape().as_list()
+
+      if padding_size < 0:
+        padding_size = abs(padding_size)
+        inset = int(padding_size * 2)
+        image = tf.image.resize_image_with_crop_or_pad(image,
+                                                       target_height=image_shape[0] - inset,
+                                                       target_width=image_shape[1] - inset)
 
       if padding_size > 0:
         pad_h = [padding_size] * 2
