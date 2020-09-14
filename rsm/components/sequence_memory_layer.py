@@ -1561,6 +1561,7 @@ class SequenceMemoryLayer(SummaryComponent):
       #return tf.losses.mean_squared_error(target, output, reduction=tf.losses.Reduction.MEAN)
 
     if self._hparams.loss_type == 'sigmoid-ce':
+      target = tf.clip_by_value(target, 0.0, 1.0)
       return tf.losses.sigmoid_cross_entropy(multi_class_labels=target, logits=output_logits)
 
     if self._hparams.loss_type == 'softmax-ce':
