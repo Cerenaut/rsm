@@ -329,9 +329,13 @@ class MNISTMovingInfiniteDataset(MNISTMovingDataset):  # pylint: disable=W0223
 
       image_shape = image.get_shape().as_list()
 
+      # Given padding_size = -1
       if padding_size < 0:
-        padding_size = abs(padding_size)
-        inset = int(padding_size * 2)
+        padding_size = abs(padding_size)  # padding_size = 1
+        inset = int(padding_size * 2)  # inset = 2
+
+        # If => image shape = (32, 32)
+        # Then => cropped image shape = (32 - 2, 32 - 2 ) = (30, 30)
         image = tf.image.resize_image_with_crop_or_pad(image,
                                                        target_height=image_shape[0] - inset,
                                                        target_width=image_shape[1] - inset)
