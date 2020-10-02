@@ -59,6 +59,8 @@ class CompositeRSMStack(CompositeComponent):
         build_rsm=True,
         build_gan=False,
 
+        rsm_input_resize=True,
+
         gan_rsm_input='decoding'
     )
 
@@ -112,6 +114,14 @@ class CompositeRSMStack(CompositeComponent):
       # Build the RSM Stack
       if self._hparams.build_rsm:
         logging.info('Building RSM (predictor)')
+
+        # Optionally resize the input to the RSM
+        if self._hparams.rsm_input_resize:
+          new_size = input_shape[1] // 2
+          input_shape[1] = new_size
+          input_shape[2] = new_size
+          input_values_next = tf.image.resize_images(input_values_next, [new_size, new_size])
+
         input_values_next, input_shape_next = self._build_rsm_stack(input_values_next, input_shape_next,
                                                                     label_values, label_shape, decoder)
       else:
