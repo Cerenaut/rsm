@@ -59,7 +59,7 @@ class CompositeRSMStack(CompositeComponent):
         build_rsm=True,
         build_gan=False,
 
-        rsm_input_resize=True,
+        rsm_input_size=0,
 
         gan_rsm_input='decoding'
     )
@@ -115,12 +115,25 @@ class CompositeRSMStack(CompositeComponent):
       if self._hparams.build_rsm:
         logging.info('Building RSM (predictor)')
 
+        def resize_image_keep_aspect(image, lo_dim):
+          # Take width/height
+          initial_width = tf.shape(image)[1]
+          initial_height = tf.shape(image)[2]
+
+          # Take the greater value, and use it for the ratio
+          min_ = tf.minimum(initial_width, initial_height)
+          ratio = tf.to_float(min_) / tf.constant(lo_dim, dtype=tf.float32)
+
+          new_width = tf.to_int32(tf.to_float(initial_width) / ratio)
+          new_height = tf.to_int32(tf.to_float(initial_height) / ratio)
+
+          return tf.image.resize_images(image, [new_width, new_height])
+
         # Optionally resize the input to the RSM
-        if self._hparams.rsm_input_resize:
-          new_size = input_shape[1] // 2
-          input_shape[1] = new_size
-          input_shape[2] = new_size
-          input_values_next = tf.image.resize_images(input_values_next, [new_size, new_size])
+        if self._hparams.rsm_input_size > 0:
+          input_shape[1] = self._hparams.rsm_input_size
+          input_shape[2] = self._hparams.rsm_input_size
+          input_values_next = resize_image_keep_aspect(input_values_next, self._hparams.rsm_input_size)
 
         input_values_next, input_shape_next = self._build_rsm_stack(input_values_next, input_shape_next,
                                                                     label_values, label_shape, decoder)
