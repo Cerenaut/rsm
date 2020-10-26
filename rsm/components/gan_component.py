@@ -19,6 +19,7 @@ from __future__ import absolute_import
 from __future__ import division
 from __future__ import print_function
 
+import math
 import logging
 
 import numpy as np
@@ -244,6 +245,8 @@ class GANComponent(SummaryComponent):
       super(GANComponent.Discriminator, self).__init__(
           discriminator_hparams, output_size, name)
 
+      self.batch_size = hparams.batch_size
+
     def __call__(self, inputs):
       """
       Args:
@@ -279,10 +282,45 @@ class GANComponent(SummaryComponent):
 
     def loss(self, real_logits, fake_logits):
       """Build the discriminator loss."""
-      smoothing_factor = 0.1
-
-      real_labels = tf.ones_like(real_logits) * (1 - smoothing_factor)
+      real_labels = tf.ones_like(real_logits)
       fake_labels = tf.zeros_like(fake_logits)
+
+      def smooth_labels(y):
+        """Smooth positive labels to [0.7, 1.2] range."""
+        return y - 0.3 + (tf.random_uniform(y.shape) * 0.5)
+
+      def flip_labels(y, p, value):
+        old_shape = y.get_shape().as_list()
+
+        y = tf.squeeze(y)
+        shape = y.get_shape().as_list()
+        n_select = math.ceil(p * shape[0])
+
+        indices_array = np.zeros(shape)
+        flip_idx = np.random.choice([i for i in range(shape[0])], size=n_select)
+        indices_array[flip_idx] = 1
+
+        indices = tf.cast(tf.where(tf.equal(indices_array, 1)), tf.int32)
+        indices_shape = indices.get_shape().as_list()
+
+        values_array = np.ones(n_select) * value
+
+        scatter = tf.scatter_nd(indices, values_array, shape=y.shape)
+
+        inverse_mask = tf.cast(tf.math.logical_not(indices_array), tf.float32)
+        y_masked = tf.multiply(inverse_mask, y)
+
+        output =  tf.add(y_masked, tf.cast(scatter, tf.float32))
+
+        return tf.reshape(output, old_shape)
+
+      # Randomly flip labels with 5% probability
+      flip_prob = 0.05
+      real_labels = flip_labels(real_labels, flip_prob, 0)
+      fake_labels = flip_labels(fake_labels, flip_prob, 1)
+
+      # Smooth the real labels
+      real_labels = smooth_labels(real_labels)
 
       real_loss = tf.reduce_mean(
           tf.nn.sigmoid_cross_entropy_with_logits(labels=real_labels,
